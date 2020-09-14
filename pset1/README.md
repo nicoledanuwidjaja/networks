@@ -5,7 +5,27 @@ Implement a client program which communicates with a server using sockets. The s
 ### Protocol
 Server runs on `3700.network` machine and listens for requests on a TCP socket bound to `port 27993`.
 
-Four types of messages: HELLO, FIND, COUNT, and BYE. Each message is an ASCII string consisting of multiple fields separated by spaces (0x20) and terminated with a line feed (0x0A, \n). The maximum length of each message is 8192 bytes.
+There are four types of messages: HELLO, FIND, COUNT, and BYE. Each message is an ASCII string consisting of multiple fields separated by spaces (0x20) and terminated with a line feed (0x0A, \n). The maximum length of each message is 8192 bytes.
+
+Once the socket is connected, the client sends a HELLO message to the server.
+
+```
+cs3700fall2020 HELLO [your NEU ID]\n
+```
+
+The server will reply with a FIND message:
+```
+cs3700fall2020 FIND [A single ASCII symbol] [A string of random characters]\n
+```
+The client must count the number of occurrences of the [ASCII symbol] in the [random characters] and send a COUNT message to the server.
+```
+cs3700fall2020 COUNT [the count of the given symbol in the given string]\n
+```
+If the  count is incorrect, the server will terminate the connection. Otherwise, the server will either send another FIND message or return a BYE message:
+```
+cs3700fall2020 BYE [a 64 byte secret flag]\n
+```
+Once the program has received the BYE message, it can close the connection to the server, and return a secret flag (64-bit).
 
 ### Submission
 The client program executes on the command line:
