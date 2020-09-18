@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import socket
 import sys
+import ssl
 
 # default values
-NUID = '001467556'
+NUID = '001489806'
 HOST = '3700.network'
 PORT = 27993
+
+# obtain information from server and respond to messages
+HELLO = 'cs3700fall2020 HELLO ' + NUID + '\n'
 
 # Usage: ./client <-p port> <-s> [hostname] [NEU ID]
 args = sys.argv
@@ -14,6 +18,13 @@ ssl_flag = '-s' in args
 
 # check if optional -p flag is properly set up or not used
 valid_port = (port_flag and args[port_flag + 1].isdigit()) or not port_flag
+
+# connect server using encrypted SSL version if optional -s flag is on
+context = None
+if ssl_flag:
+    PORT = 27994
+    context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+
 if 2 < len(args) < 6 and args[-1].isdigit() and valid_port:
     if port_flag:
         PORT = int(args[port_flag + 1])
@@ -31,7 +42,10 @@ else:
 def create_socket():
     address = (HOST, PORT)
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if context:
+            s = context.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+        else:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(address)
         return s
     except OSError:
@@ -41,10 +55,6 @@ def create_socket():
     if s is None:
         print('Socket connection failed. Stoopid')
         sys.exit(1)
-
-
-# obtain information from server and respond to messages
-HELLO = 'cs3700fall2020 HELLO ' + NUID + '\n'
 
 
 def process_msg(s, msg_type):
