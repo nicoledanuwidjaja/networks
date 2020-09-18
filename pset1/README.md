@@ -2,11 +2,21 @@
 ### Approach
 Tackled understanding the in's and out's of creating a client program for communicating with a socket using TCP/IP protocol. Used [Python documentation](https://docs.python.org/3/library/socket.html#example) examples to illustrate proper usages of `connect`, `sendall`, and `recv(bytes)`.
 
-Also worked on testing the program for potential problems with malformed input data at several steps of the program: command line arguments, socket communication, correct calculations for respective message types, and eventual termination of the program. 
+Worked on testing the program for potential problems with malformed input data at several steps of the program: command line arguments, socket communication, correct calculations for respective message types, and eventual termination of the program.
+
+Command line arguments (-p for port, -s for ssl connection) were implemented and were tested for variable NUIDs, port numbers, and hostnames. The program was separated into three main functions: `create_socket`, `process_msg`, and `count_keys`.
+
+`create_socket`: created the TCP/IP socket connection
+
+`process_msg`: encode and process various message types received from server
+
+`count_keys`: received message data from server and performed count calculations for given key
 
 ### Challenges
-Initially had difficulties understanding why data received from the server was in a different form than expected (misshaped `FIND` messages) and then eventually realized that the client program failed to account for the entire string of random characters within the `FIND` message by stopping searching with `socket.recv(bytes)` prematurely as opposed to searching until the `\n` newline is found.
+Initially had difficulties understanding why data received from the server was in a different form than expected (misshaped `FIND` messages) and then eventually realized that the client program failed to account for the entire string of random characters within the `FIND` message by stopping searching with `socket.recv(bytes)` prematurely as opposed to searching until the `\n` newline is found. Because of the nature of sending and receiving messages through the socket, it was difficult to troubleshoot why exactly was my program failing.
 
+
+## Details
 ### Description
 Implement a client program which communicates with a server using sockets. The server will ask the program to do some basic string manipulation and counting. If the program successfully counts all of the strings, then the server will return a unique secret flag.
 
