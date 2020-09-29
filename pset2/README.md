@@ -22,6 +22,8 @@ The FTP server is available at ftp://3700.network.
 
 The client will run on the command line and must support the following six operations: directory listing, making directories, file deletion, directory deletion, copying files to and from the FTP server, and moving files to and from the FTP server.
 
+Commands: `ls`, `mkdir`, `rm`, `rmdir`, `cp`, `mv`
+
 The FTP client must execute on the command line:
 ```
 ./3700ftp [operation] param1 [param2]
@@ -43,3 +45,20 @@ CODE <human readable explanation> <param>.\r\n
 ```
 
 `CODE` is a three-digit integer that specifies whether the FTP server was able to complete the request.
+
+The FTP client should be able to send the following commands: `USER`, `PASS`, `TYPE`, `MODE`, `STRU`, `LIST`, `DELE`, `MKD`, `RMD`, `STOR`, `RETR`, `QUIT`, `PASV`
+
+
+#### Socket Connections
+FTP protocol requires connecting with two socket connections: 
+1. Control Channel: Client opens to FTP server on `Port 21` for sending and receiving requests and responses
+2. Data Channel: Client asks FTP server to open data channel on second port to upload and download data with `PASV` command
+
+The server responds with a message:
+```
+227 Entering Passive Mode (192,168,150,90,195,149)
+```
+`Code 227` indicates success. The six numbers are the IP address `(192.168.150.90)` and port number that the client should connect a TCP/IP socket to in order to create the data channel.
+The two port numbers represent the top and bottom 8-bits of the port number. `(195 << 8) + 149 = 50069`
+
+Once the data transfer is complete, the data channel must be closed by the sender. One PASV data channel must be opened per operation. The control channel must stay open while the data channel is open. Once the data channel is closed, the client can end the FTP session by sending `QUIT` to the FTP server on the control channel and closing the control socket. 
