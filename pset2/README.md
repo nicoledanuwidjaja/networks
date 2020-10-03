@@ -32,13 +32,15 @@ _operation_ is a string that specifies what operation the user is attempting to 
 
 _param1_ and _param2_ are strings that either represent a path to a file on the local filesystem, or a URL to a file or directory on a FTP server.
 
+
+#### FTP requests
 FTP requests take the form of:
 ```
 COMMAND <param> <...>\r\n
 ```
 
 `COMMAND` is typically a three or four letter command that tells the FTP server to perform some action.
-
+__
 After each request, the FTP server will reply with at least one response. All FTP responses take the form of:
 ```
 CODE <human readable explanation> <param>.\r\n

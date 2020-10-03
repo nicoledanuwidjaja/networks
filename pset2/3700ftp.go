@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/url"
@@ -16,8 +18,10 @@ import (
 var SCHEME = "ftp"
 var USER = "anonymous"
 var PASS = ""
-var ADDRESS = "3700.network:21"
-var PATH string
+var HOST = "3700.network"
+var PORT = "21"
+var ADDRESS = HOST + ":" + PORT
+var PATH = "/"
 
 // command line variables
 var help_flag bool
@@ -25,6 +29,12 @@ var verbose_flag bool
 var op string
 var param1 string
 var param2 string
+var file = ""
+// command message to send to data channel
+var msg string
+// second command for mv
+var msg2 string
+var DATAADDR string
 
 func initProgram() {
 	helpFlag := flag.Bool("help", false, "show this help message and exit")
@@ -32,46 +42,7 @@ func initProgram() {
 	flag.Parse()
 
 	if *helpFlag {
-		if len(os.Args[1:]) > 1 {
-			op := os.Args[2]
-			switch op {
-			case "ls":
-				fmt.Println("USAGE")
-				fmt.Println("     ls <URL>")
-				fmt.Println("Print out the directory listing from the FTP server at the given URL")
-			case "mkdir":
-				fmt.Println("USAGE")
-				fmt.Println("     mkdir <URL>")
-				fmt.Println("Create a new directory on the FTP server at the given URL")
-			case "rm":
-				fmt.Println("USAGE:")
-				fmt.Println("     mkdir <URL>")
-				fmt.Println("Delete the file on the FTP server at the given URL")
-			case "rmdir":
-				fmt.Println("USAGE:")
-				fmt.Println("     rm <URL>")
-				fmt.Println("Delete the directory on the FTP server at the given URL")
-			case "cp":
-				fmt.Println("USAGE:")
-				fmt.Println("     cp <ARG1> <ARG2>")
-				fmt.Println("Copy the file given by ARG1 to the file given by ARG2")
-			case "mv":
-				fmt.Println("USAGE:")
-				fmt.Println("     mv <ARG1> <ARG2>")
-				fmt.Println("Move the file given by ARG1 to the file given by ARG2")
-			default:
-				fmt.Println("You entered a command that doesn't exist.")
-			}
-		} else {
-			fmt.Println("This FTP client supports the following operations:")
-			fmt.Println("  ls <URL>                 Print out the directory listing from the FTP server at the given URL")
-			fmt.Println("  mkdir <URL>              Create a new directory on the FTP server at the given URL")
-			fmt.Println("  rm <URL>                 Delete the file on the FTP server at the given URL")
-			fmt.Println("  rmdir <URL>              Delete the directory on the FTP server at the given URL")
-			fmt.Println("  cp <ARG1> <ARG2>         Copy the file given by ARG1 to the file given by\n                           ARG2. If ARG1 is a local file, then ARG2 must be a URL, and vice-versa.")
-			fmt.Println("  mv <ARG1> <ARG2>         Move the file given by ARG1 to the file given by\n                           ARG2. If ARG1 is a local file, then ARG2 must be a URL, and vice-versa.")
-		}
-
+		initHelp()
 	}
 
 	if *verboseFlag {
@@ -87,19 +58,48 @@ func initProgram() {
 
 		op := os.Args[1]
 		if op == "cp" || op == "mv" {
-			// requires two arguments
-			// arg1 = file/URL
-			// arg2 = URL/file
-			param1 := os.Args[2]
-			param2 := os.Args[3]
-			fmt.Println(param1)
-			fmt.Println(param2)
+			// checks if either parameter is a url or file
+			param1, erru1 := url.Parse(os.Args[2])
+			// parse url to copy file from remote to local
+			if param1.Scheme != "" {
+				SCHEME = param1.Scheme
+				USER = param1.User.Username()
+				p, _ := param1.User.Password()
+				PASS = p
+				PATH = param1.Path
+				file = os.Args[3]
+				msg = "RETR " + PATH + "\r\n"
+			}
+
+			param2, erru2 := url.Parse(os.Args[3])
+			// parse url to copy file from local to remote
+			if param2.Scheme != "" {
+				SCHEME = param2.Scheme
+				USER = param2.User.Username()
+				p, _ := param2.User.Password()
+				PASS = p
+				PATH = param2.Path
+				file = os.Args[2]
+				msg = "STOR " + PATH + "\r\n"
+			}
+
+			if erru1 != nil || erru2 != nil {
+				fmt.Println("Failed to parse through URL.")
+				os.Exit(1)
+			}
+
+			if op == "mv" {
+				// copy file, then delete
+				// TODO
+				msg = "STOR " + PATH + "\r\n"
+				msg2 = "DELE " + PATH + "\r\n"
+			}
 		} else {
 			rawUrl := os.Args[2]
 			// verify correct URL format
 			u, err := url.Parse(rawUrl)
 			if err != nil {
-				log.Println(err)
+				panic(err)
 			}
 			fmt.Println(u)
 			// required parameters: HOST and PATH
@@ -107,7 +107,9 @@ func initProgram() {
 			USER = u.User.Username()
 			p, _ := u.User.Password()
 			PASS = p
-			ADDRESS = u.Host
+
+			// TODO: set default port or change if provided
+			ADDRESS = u.Host + ":" + PORT
 			PATH = u.Path
 			//host, port, _ := net.SplitHostPort(u.Host)
 			//fmt.Println(host)
@@ -116,11 +118,15 @@ func initProgram() {
 			switch op {
 			// requires URL
 			case "ls":
+				msg = "LIST " + PATH + "\r\n"
 			case "mkdir":
+				msg = "MKD " + PATH + "\r\n"
 			case "rm":
+				msg = "DELE " + PATH + "\r\n"
 			case "rmdir":
+				msg = "RMD " + PATH + "\r\n"
 			default:
-				fmt.Println("This command is not supported. Use -h or -help to ")
+				fmt.Println("This command is not supported. Use -h or -help to see proper usage.")
 				os.Exit(1)
 			}
 		}
@@ -134,6 +140,7 @@ func initProgram() {
 // establish TCP control channel and send commands
 func openConnection() {
 	fmt.Println(ADDRESS)
+	fmt.Println("Open control channel")
 	// create TCP client and connects to network server
 	conn, err := net.Dial("tcp", ADDRESS)
 
@@ -149,7 +156,6 @@ func openConnection() {
 	binaryType := "TYPE " + "I\r\n"
 	streamMode := "MODE " + "S\r\n"
 	fileMode := "STRU " + "F\r\n"
-	open := "PASV\r\n"
 
 	// SETUP
 	processMessage(conn, username)
@@ -159,85 +165,189 @@ func openConnection() {
 	processMessage(conn, binaryType)
 	processMessage(conn, streamMode)
 	processMessage(conn, fileMode)
-	// open data channel
-	processMessage(conn, open)
+	processMessage(conn, msg)
 }
 
-// sends message to server
+// sends message to server from control channel
 func processMessage(conn net.Conn, message string) {
-	fmt.Println(strings.TrimRight(message, "\r\n"))
+	fmt.Println(message)
+	open := "PASV\r\n"
+	code := strings.Split(strings.TrimRight(message, "\r\n"),  " ")[0]
+
+	// open data channel
+	if code == "LIST" || code == "STOR" || code == "RETR" {
+		processMessage(conn, open)
+		if code == "STOR" {
+			fmt.Println("Uploading data...")
+			go sendData(file, DATAADDR)
+		}
+
+		if code == "RETR" || code == "LIST" {
+			fmt.Println("Downloading data...")
+			go processData(DATAADDR)
+		}
+	}
+
 	// writes message to server
 	_, writeErr := conn.Write([]byte(message))
-	result := make([]byte, 128)
 	// reads response message from server
-	_, readErr := conn.Read(result)
-	fmt.Println(">> ", string(result))
+	result := make([]byte, 1024)
+	for {
+		n, readErr := bufio.NewReader(conn).Read(result)
+		if readErr != nil {
+			panic(readErr)
+		} else {
+			fmt.Println(">> ", string(result[4:n]))
+			break
+		}
+	}
+
+	if writeErr != nil {
+		log.Fatal("Something went wrong!")
+		os.Exit(1)
+	}
 
 	// return IP address and port numbers to create data channel
-	if strings.TrimRight(message, "\r\n") == "PASV" {
-		nums := regexp.MustCompile(`\((.*?)\)`)
+	if code == "PASV" {
 		// parse through ip addresses (first four) and port numbers (last two)
+		nums := regexp.MustCompile(`\((.*?)\)`)
 		parsedNums := strings.Trim(nums.FindAllString(string(result), -1)[0], "()")
 		parsed := strings.Split(parsedNums, ",")
-		ipNum, errNum := strconv.Atoi(parsed[len(parsed) - 2])
-		ipNum2, errNum2 := strconv.Atoi(parsed[len(parsed) - 1])
+		ipNum, errNum := strconv.Atoi(parsed[len(parsed)-2])
+		ipNum2, errNum2 := strconv.Atoi(parsed[len(parsed)-1])
 
 		if errNum != nil || errNum2 != nil {
 			log.Fatal("Parsing is incorrect.")
 			os.Exit(1)
 		}
 
-		IP := strings.Join(parsed[:len(parsed) - 2], ".")
-		DATAPORT := strconv.Itoa(ipNum << 8 + ipNum2)
-		DATAADDR := IP + ":" + DATAPORT
-		fmt.Println(DATAADDR)
-
-		// TODO: get some responses!
-		// create TCP client and connects to network server
-		data, err := net.Dial("tcp", DATAADDR)
-		fmt.Println(data)
-		_, dataErr := data.Read(result)
-		fmt.Println(">> ", string(result))
-
-		processMessage(data, "")
-
-		if err != nil || dataErr != nil {
-			fmt.Println(err)
-			return
-		}
-	}
-
-	if writeErr != nil || readErr != nil {
-		log.Fatal("Something went wrong!")
-		os.Exit(1)
+		IP := strings.Join(parsed[:len(parsed)-2], ".")
+		DATAPORT := strconv.Itoa(ipNum<<8 + ipNum2)
+		DATAADDR = IP + ":" + DATAPORT
 	}
 }
 
-// download or upload data with commands via data channel
-func processData() {
-	//for {
-		// data commands
-		//list := "LIST " + "\r\n"
-		//delete := "DELE " + "\r\n"
-		//makeDir := "MKD " + "\r\n"
-		//removeDir := "RMD " + "\r\n"
-		//upload := "STOR " + "\r\n"
-		//download := "RETR " + "\r\n"
-		//quit := "QUIT\r\n"
+// download data via data channel
+func processData(address string) {
+	fmt.Println(msg)
+	code := strings.Split(strings.TrimRight(msg, "\r\n"),  " ")[0]
 
-		//reader := bufio.NewReader(conn)
-		//if err != nil {
-		//	log.Fatal("Something went wrong: ", err)
-		//	return
-		//}
-	//}
+	// create TCP client and connects to network server
+	data, err := net.Dial("tcp", address)
+	if err != nil {
+		fmt.Println("Connection to data channel went wrong.")
+		return
+	}
 
-	//conn.Close()
+	// reads response message from server
+	result := make([]byte, 2048)
+	for {
+		n, readErr := bufio.NewReader(data).Read(result)
+		if readErr != nil {
+			if readErr == io.EOF {
+				fmt.Println("No data.")
+				break
+			}
+			panic(readErr)
+			return
+		} else {
+			if code == "RETR" {
+				filepath, outErr := os.Create(strings.Trim(PATH, "/"))
+
+				if outErr != nil {
+					panic(outErr)
+				}
+
+				io.Copy(filepath, bufio.NewReader(data))
+				//_, fileErr = io.Copy(filepath, bufio.NewReader(data))
+				//if fileErr != nil {
+				//	panic(fileErr)
+				//}
+			} else {
+				fmt.Println("--------------------------------------------------------------------------------")
+				fmt.Println(string(result[:n]))
+				fmt.Println("--------------------------------------------------------------------------------")
+				break
+			}
+		}
+	}
+	defer data.Close()
+	fmt.Println("Data received!")
+}
+
+// upload data via data channel
+func sendData(file string, address string) {
+	fmt.Println("PATH : ", PATH)
+	fmt.Println(msg)
+	fileBytes, err := os.Open(file)
+	//fileBytes, fileErr := ioutil.ReadFile(file)
+
+	// create TCP client and connects to network server
+	data, err := net.Dial("tcp", address)
+	if err != nil {
+		fmt.Println("Connection to data channel went wrong.")
+		return
+	}
+
+	// sends the file data to the server
+	fileData, writeErr := io.Copy(data, fileBytes)
+	fmt.Println("NUM OF BYTES: ", fileData)
+	if writeErr != nil {
+		fmt.Println("Error with sending file data.")
+		panic(writeErr)
+	}
+	defer data.Close()
+	fmt.Println("Data uploaded!")
+}
+
+// help commands for ftp client usage
+func initHelp() {
+	if len(os.Args[1:]) > 1 {
+		op := os.Args[2]
+		switch op {
+		case "ls":
+			fmt.Println("USAGE")
+			fmt.Println("     ls <URL>")
+			fmt.Println("Print out the directory listing from the FTP server at the given URL")
+		case "mkdir":
+			fmt.Println("USAGE")
+			fmt.Println("     mkdir <URL>")
+			fmt.Println("Create a new directory on the FTP server at the given URL")
+		case "rm":
+			fmt.Println("USAGE:")
+			fmt.Println("     mkdir <URL>")
+			fmt.Println("Delete the file on the FTP server at the given URL")
+		case "rmdir":
+			fmt.Println("USAGE:")
+			fmt.Println("     rm <URL>")
+			fmt.Println("Delete the directory on the FTP server at the given URL")
+		case "cp":
+			fmt.Println("USAGE:")
+			fmt.Println("     cp <ARG1> <ARG2>")
+			fmt.Println("Copy the file given by ARG1 to the file given by ARG2")
+		case "mv":
+			fmt.Println("USAGE:")
+			fmt.Println("     mv <ARG1> <ARG2>")
+			fmt.Println("Move the file given by ARG1 to the file given by ARG2")
+		default:
+			fmt.Println("You entered a command that doesn't exist.")
+		}
+	} else {
+		fmt.Println("This FTP client supports the following operations:")
+		fmt.Println("  ls <URL>                 Print out the directory listing from the FTP server at the given URL")
+		fmt.Println("  mkdir <URL>              Create a new directory on the FTP server at the given URL")
+		fmt.Println("  rm <URL>                 Delete the file on the FTP server at the given URL")
+		fmt.Println("  rmdir <URL>              Delete the directory on the FTP server at the given URL")
+		fmt.Println("  cp <ARG1> <ARG2>         Copy the file given by ARG1 to the file given by\n                           ARG2. If ARG1 is a local file, then ARG2 must be a URL, and vice-versa.")
+		fmt.Println("  mv <ARG1> <ARG2>         Move the file given by ARG1 to the file given by\n                           ARG2. If ARG1 is a local file, then ARG2 must be a URL, and vice-versa.")
+	}
 }
 
 // build binary: go build 3700ftp.go
 // ./3700ftp [operation] param1 [param2]
 func main() {
+	// initialize program and accept command line arguments
 	initProgram()
+	// open connection and send message to establish both socket connections
 	openConnection()
 }
