@@ -30,8 +30,10 @@ var op string
 var param1 string
 var param2 string
 var file = ""
+
 // command message to send to data channel
 var msg string
+
 // second command for mv
 var msg2 string
 var DATAADDR string
@@ -90,9 +92,9 @@ func initProgram() {
 
 			if op == "mv" {
 				// copy file, then delete
-				// TODO
 				msg = "STOR " + PATH + "\r\n"
 				msg2 = "DELE " + PATH + "\r\n"
+				fmt.Println(msg)
 			}
 		} else {
 			rawUrl := os.Args[2]
@@ -172,7 +174,7 @@ func openConnection() {
 func processMessage(conn net.Conn, message string) {
 	fmt.Println(message)
 	open := "PASV\r\n"
-	code := strings.Split(strings.TrimRight(message, "\r\n"),  " ")[0]
+	code := strings.Split(strings.TrimRight(message, "\r\n"), " ")[0]
 
 	// open data channel
 	if code == "LIST" || code == "STOR" || code == "RETR" {
@@ -230,7 +232,7 @@ func processMessage(conn net.Conn, message string) {
 // download data via data channel
 func processData(address string) {
 	fmt.Println(msg)
-	code := strings.Split(strings.TrimRight(msg, "\r\n"),  " ")[0]
+	code := strings.Split(strings.TrimRight(msg, "\r\n"), " ")[0]
 
 	// create TCP client and connects to network server
 	data, err := net.Dial("tcp", address)
@@ -241,46 +243,46 @@ func processData(address string) {
 
 	// reads response message from server
 	result := make([]byte, 2048)
-	for {
-		n, readErr := bufio.NewReader(data).Read(result)
-		if readErr != nil {
-			if readErr == io.EOF {
-				fmt.Println("No data.")
-				break
-			}
-			panic(readErr)
+	n, readErr := bufio.NewReader(data).Read(result)
+	if readErr != nil {
+		if readErr == io.EOF {
+			fmt.Println("No data.")
 			return
-		} else {
-			if code == "RETR" {
-				filepath, outErr := os.Create(strings.Trim(PATH, "/"))
-
-				if outErr != nil {
-					panic(outErr)
-				}
-
-				io.Copy(filepath, bufio.NewReader(data))
-				//_, fileErr = io.Copy(filepath, bufio.NewReader(data))
-				//if fileErr != nil {
-				//	panic(fileErr)
-				//}
-			} else {
-				fmt.Println("--------------------------------------------------------------------------------")
-				fmt.Println(string(result[:n]))
-				fmt.Println("--------------------------------------------------------------------------------")
-				break
+		}
+		panic(readErr)
+	} else {
+		if code == "RETR" {
+			fmt.Println(PATH)
+			source, sourceErr := os.Open(PATH)
+			if sourceErr != nil {
+				return
 			}
+			// create local file
+			fmt.Println("I reached here")
+			filepath, outErr := os.Create(file)
+			if outErr != nil {
+				panic(outErr)
+			}
+			fmt.Println("ASDJKJSK ", filepath)
+			//defer filepath.Close()
+			_, dataErr := io.Copy(filepath, source)
+			if dataErr != nil {
+				panic(dataErr)
+			}
+			fmt.Println("Finished downloading.")
+		} else {
+			fmt.Println("--------------------------------------------------------------------------------")
+			fmt.Println(string(result[:n]))
+			fmt.Println("--------------------------------------------------------------------------------")
+
 		}
 	}
-	defer data.Close()
 	fmt.Println("Data received!")
 }
 
 // upload data via data channel
 func sendData(file string, address string) {
-	fmt.Println("PATH : ", PATH)
-	fmt.Println(msg)
 	fileBytes, err := os.Open(file)
-	//fileBytes, fileErr := ioutil.ReadFile(file)
 
 	// create TCP client and connects to network server
 	data, err := net.Dial("tcp", address)

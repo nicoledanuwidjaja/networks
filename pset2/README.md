@@ -1,8 +1,12 @@
 ## Project 2: FTP Client
 
 ### Approach
+I approached this by first tackling the command line, and then working through each of the commands, keeping the recommended order in mind. I was able to use some of Go's libraries, such as flag, io, and net to connect to the TCP/IP channels, as well as connect and manipulate files.
 
 ### Challenges
+The main challenges were similar to the first assignment, where receiving data from the server was sometimes inconsistent. I found that this was difficult to debug, and mainly occurred for receiving data from the server. While I didn't have problems with uploading files, I found that I need to be more cautious of properly reading the instructions in the future in order to avoid splurging time on simple mistakes.
+
+
 
 
 ## Details
