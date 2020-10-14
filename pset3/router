@@ -41,7 +41,7 @@ PROV = "prov"
 
 # received incoming data
 messages = []
-table = []
+forwarding_table = []
 
 ##########################################################################################
 
@@ -58,6 +58,7 @@ class Router:
         self.relations = {}
         self.sockets = {}
         for relationship in networks:
+            # ip address and type (customer, provider, peer)
             network, relation = relationship.split("-")
             if DEBUG: 
                 print("Starting socket for", network, relation)
@@ -136,7 +137,12 @@ class Router:
 
     def update(self, srcif, packet):
         """	handle update packets	"""
-        # TODO 
+        # adds entry to forwarding table (updates)
+        entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src']}
+        forwarding_table.append(entry)
+        self.updates.append(packet)
+        print("Updates: ", self.updates)
+        print("Entry: ", entry)
         return False
     
     def revoke(self, packet):
@@ -161,6 +167,7 @@ class Router:
 
     def run(self):
         while True:
+            # opens and listens to Unix domain sockets
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
             for conn in socks:
                 try:
@@ -171,10 +178,15 @@ class Router:
                 if k:
                     for sock in self.sockets:
                         if self.sockets[sock] == conn:
+                            # source interface: source port/socket of data message
                             srcif = sock
                     msg = json.loads(k)
                     message = {"type": msg['type'], "dst": msg['dst'], "src": msg['src'], "msg": msg['msg']}
                     messages.append(message)
+                    
+                    if message['type'] == 'update':
+                        self.update(srcif, msg)
+                    
                     if not self.handle_packet(srcif, msg):
                         self.send_error(conn, msg)
                 else:
