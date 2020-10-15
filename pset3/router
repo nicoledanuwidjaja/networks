@@ -113,23 +113,26 @@ def findDest(result):
     resultdec = ipl(result)
     valid_entries = []
     for i in range(len(result)):
-        ftipl = forwarding_table[i]['network'].split('.')
+        ipstr = forwarding_table[i]['network']
         #print("RESULT IPL: ", resultdec[i])
         #print("FT IPL: ", ftipl)
-        if matchIps(strToIntl(ftipl), resultdec[i]):
+        if matchIps(ipToIntList(ipstr), resultdec[i]):
             valid_entries.append(i)
     return valid_entries    
 
+# encodes dictionary as bytes in json format
 def dictToByte(dictionary):
     dictj = json.dumps(dictionary)
     dictb = dictj.encode("utf-8")
     return dictb
 
-def strToIntl(strl):
-    intl = []
-    for s in strl:
-        intl.append(int(s))
-    return intl
+# converts ip address string to integer list of size four
+def ipToIntList(strl):
+    return list(map(int, strl.split('.')))
+
+# convert ip of neighbor to router (*.*.*.2 to *.*.*.1)
+def neighborToRouterIP(neighbor):
+    return '.'.join(neighbor.split('.')[:-1] + ["1"])
 
 class Router:
 
@@ -220,7 +223,7 @@ class Router:
         # Scenario 1: no route
         if (len(valid_entries) == 0):
             #print("NO VALID ENTRIES")
-            my_ip = '.'.join(packet['src'].split('.')[:-1]+["1"])
+            my_ip = neighborToRouterIP(packet['src'])
             datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
             datapkgb = dictToByte(datapkg)
             self.sockets[packet['src']].sendall(datapkgb)
@@ -228,8 +231,8 @@ class Router:
         elif (len(valid_entries) == 1):
             valid_entry = forwarding_table[valid_entries[0]]
             #print(valid_entry)
-            my_ip = '.'.join(valid_entry['peer'].split('.')[:-1]+["1"])
-            datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg":packet['msg']}
+            my_ip = neighborToRouterIP(valid_entry['peer'])
+            datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
             datapkgb = dictToByte(datapkg)
             self.sockets[valid_entry['peer']].sendall(datapkgb)
         # Scenario 3: multiple possible routes
@@ -248,7 +251,10 @@ class Router:
         
         forwarding_table.append(entry)
         self.updates.append(packet)
-        announcement = {"type": "update", "src": "", "dst": "", "msg": {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "localpref": packet['msg']['localpref'], "ASPath": [], "origin": packet['msg']['origin'], "selfOrigin": packet['msg']['selfOrigin']}}
+        announcement = {"type": "update", "src": "", "dst": "",
+                        "msg": {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'],
+                                "localpref": packet['msg']['localpref'], "ASPath": [],
+                                "origin": packet['msg']['origin'], "selfOrigin": packet['msg']['selfOrigin']}}
         for a in packet['msg']['ASPath']:
             announcement['msg']['ASPath'].append(a)
         
@@ -257,7 +263,7 @@ class Router:
         for n in self.sockets.keys():
             if packet['src'] != n:
                 # creates appropriate python address for announcement source
-                dest = '.'.join(n.split('.')[:-1]+["1"])
+                dest = neighborToRouterIP(n)
                 # sets the correct values for announcement src, dst, and ancts
                 announcement['src'] = dest
                 announcement['dst'] = n
