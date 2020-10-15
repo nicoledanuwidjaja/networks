@@ -45,44 +45,48 @@ forwarding_table = []
 
 ##########################################################################################
 
+# UTILITY FUNCTIONS
+# convert ip address to binary representation of four 8-bit segments
 def binl(ip):   
     ipl = ip.split(".")
     binl = []
     for n in ipl:
         # turn into binary
-        binip = bin(int(n))
-        # add padding
+        binip = bin(int(n))[2:]
+        # add padding for 8-bit segments
         strip = str(binip).zfill(8)
         binl.append(strip)
-        #binl.append(int(binip))
-    print(binl)
     return binl 
 
+# calculate the combination for network/netmask addresses
+def combine_submask(netmask_ip, dest_ip):
+    print("OG Netmask: ", netmask_ip)
+    print("OG Dest: ", dest_ip)
+    combined = []
+    # separate bits into four groups of 8-bits
+    for b in range(4):
+        # calculate bitwise and for each bit individually
+        finpart = ""
+        for s in range(8):
+            finpart += str(int(netmask_ip[b][s]) & int(dest_ip[b][s]))
+        print("Part: ", finpart)
+        combined.append(finpart)
+    print("Combined: ", combined)
+    return combined
+
+# match combined network/netmask addresses with corresponding neighbor network
 def mask(dest):
-    for e in table:
+    result = []
+    # fake = ["192.168.0.0"]
+    for e in forwarding_table:
         nmbinl = binl(e['netmask'])
         destbinl = binl(dest)
-        combined = []
-        for b in range(4):
-            nmpart = nmbinl[b]
-            destpart = destbinl[b]
-            nms = nmpart.split("")
-            dests = destbinl.split("")
-            finpart = ""
-            for s in range(8):
-                finpart += (int(nms[s]) & int(dests[s]))
-            combined.append(int(finpart))
-     combined.join('.')
-
-
-def masktwo():
-    ip1 = binl("192.168.0.0")
-    ip2 = binl("255.255.255.0")
-    print(bytes([a & b for a, b in zip(ip1[::-1], ip2[::-1])][::-1]))
-
-
-mask("hi")
-
+        # Test variables
+        # nmbinl = binl("192.168.0.0")
+        # destbinl = binl("255.255.255.0")
+        subresult = combine_submask(nmbinl, destbinl)
+        result.append(subresult)
+    return result
 
 
 class Router:
@@ -166,8 +170,7 @@ class Router:
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        binl('192.168.0.0')
-        
+        port = mask(packet['dst'])
         # Scenario 1: no route
         # Scenario 2: one possible route
         # Scenario 3: multiple possible routes
