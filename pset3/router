@@ -60,8 +60,8 @@ def binl(ip):
 
 # calculate the combination for network/netmask addresses
 def combine_submask(netmask_ip, dest_ip):
-    print("OG Netmask: ", netmask_ip)
-    print("OG Dest: ", dest_ip)
+    #print("OG Netmask: ", netmask_ip)
+    #print("OG Dest: ", dest_ip)
     combined = []
     # separate bits into four groups of 8-bits
     for b in range(4):
@@ -69,9 +69,9 @@ def combine_submask(netmask_ip, dest_ip):
         finpart = ""
         for s in range(8):
             finpart += str(int(netmask_ip[b][s]) & int(dest_ip[b][s]))
-        print("Part: ", finpart)
+        #print("Part: ", finpart)
         combined.append(finpart)
-    print("Combined: ", combined)
+    #print("Combined: ", combined)
     return combined
 
 # match combined network/netmask addresses with corresponding neighbor network
@@ -88,6 +88,48 @@ def mask(dest):
         result.append(subresult)
     return result
 
+# convert list of binary ips(in list form) to list of dec ips (in list form)
+def ipl(binl):
+    ipl = []
+    for b in range(len(binl)):
+        binp = []
+        for p in range(4):
+            binp.append(int(binl[b][p], 2))
+        ipl.append(binp)
+    return ipl
+
+# see if a specific network matches a 
+# specific destination that has already been masked
+def matchIps(networkipl, destipl):
+    for i in range(4):
+        if (networkipl[i] == 0):
+            return True
+        elif (networkipl[i] != destipl[i]):
+            return False
+
+# find the network in the forwarding table that can route
+# the given destination
+def findDest(result):
+    resultdec = ipl(result)
+    valid_entries = []
+    for i in range(len(result)):
+        ftipl = forwarding_table[i]['network'].split('.')
+        #print("RESULT IPL: ", resultdec[i])
+        #print("FT IPL: ", ftipl)
+        if matchIps(strToIntl(ftipl), resultdec[i]):
+            valid_entries.append(i)
+    return valid_entries    
+
+def dictToByte(dictionary):
+    dictj = json.dumps(dictionary)
+    dictb = dictj.encode("utf-8")
+    return dictb
+
+def strToIntl(strl):
+    intl = []
+    for s in strl:
+        intl.append(int(s))
+    return intl
 
 class Router:
 
@@ -171,8 +213,25 @@ class Router:
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         port = mask(packet['dst'])
+        portipl = ipl(port)
+        #print(portipl)
+        valid_entries = findDest(port)
+        #print(packet)
         # Scenario 1: no route
+        if (len(valid_entries) == 0):
+            #print("NO VALID ENTRIES")
+            my_ip = '.'.join(packet['src'].split('.')[:-1]+["1"])
+            datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[packet['src']].sendall(datapkgb)
         # Scenario 2: one possible route
+        elif (len(valid_entries) == 1):
+            valid_entry = forwarding_table[valid_entries[0]]
+            #print(valid_entry)
+            my_ip = '.'.join(valid_entry['peer'].split('.')[:-1]+["1"])
+            datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg":packet['msg']}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[valid_entry['peer']].sendall(datapkgb)
         # Scenario 3: multiple possible routes
         # Scenario 4: tie breaker needed
         return False
@@ -194,7 +253,7 @@ class Router:
             announcement['msg']['ASPath'].append(a)
         
         announcement['msg']['ASPath'].append(args.asn)    
-        print("PACKET: ", packet)
+        #print("PACKET: ", packet)
         for n in self.sockets.keys():
             if packet['src'] != n:
                 # creates appropriate python address for announcement source
@@ -202,13 +261,13 @@ class Router:
                 # sets the correct values for announcement src, dst, and ancts
                 announcement['src'] = dest
                 announcement['dst'] = n
-                print("ANNOUNCEMENT: ", announcement)
+                #print("ANNOUNCEMENT: ", announcement)
                 ancts = json.dumps(announcement)
                 anctb = ancts.encode('utf-8')
                 self.sockets[n].sendall(anctb)
         
-        print("Updates: ", self.updates)
-        print("Entry: ", entry)
+        #print("Updates: ", self.updates)
+        #print("Entry: ", entry)
         return False
     
     def revoke(self, packet):
@@ -218,7 +277,12 @@ class Router:
 
     def dump(self, packet):
         """	handles dump table requests	"""
-        # TODO
+        print("DUMPING")
+        dumppkg = { 'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': forwarding_table}
+        dumppkgb = dictToByte(dumppkg)
+        print(packet['src'])
+        print(forwarding_table)
+        self.sockets[packet['src']].sendall(dumppkgb)
         return True
 
     def handle_packet(self, srcif, packet):
@@ -249,16 +313,17 @@ class Router:
                     msg = json.loads(k)
                     message = {"type": msg['type'], "dst": msg['dst'], "src": msg['src'], "msg": msg['msg']}
                     messages.append(message)
-                    
                     if message['type'] == 'update':
                         self.update(srcif, msg)
                     if message['type'] == 'data':
                         self.forward(srcif, msg)
+                    if message['type'] == 'dump':
+                        self.dump(msg)
                     if not self.handle_packet(srcif, msg):
                         self.send_error(conn, msg)
                 else:
                     return
-                print(messages)
+                #print(messages)
         return
 
 if __name__ == "__main__":
