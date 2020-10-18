@@ -107,7 +107,7 @@ def matchIps(networkipl, destipl):
         elif (networkipl[i] != destipl[i]):
             return False
 
-# find the network in the forwarding table that can route
+# find the networks in the forwarding table that can route
 # the given destination
 def findDest(result):
     resultdec = ipl(result)
@@ -133,6 +133,23 @@ def ipToIntList(strl):
 # convert ip of neighbor to router (*.*.*.2 to *.*.*.1)
 def neighborToRouterIP(neighbor):
     return '.'.join(neighbor.split('.')[:-1] + ["1"])
+
+# returns the length of the netmask
+def countNetmask(nmstr):
+    nmBin = binl(nmstr)
+    count = 0
+    for x in range(len(nmBin)):
+        for y in nmBin[x]:
+            if y == 1:
+                count +=1
+    return count
+
+def checkForDups(nmmax, nmlist):
+    count = 0
+    for l in nmlist:
+        if l == nmmax:
+            count+=1
+    return count
 
 class Router:
 
@@ -236,6 +253,21 @@ class Router:
             datapkgb = dictToByte(datapkg)
             self.sockets[valid_entry['peer']].sendall(datapkgb)
         # Scenario 3: multiple possible routes
+        elif(len(valid_entries) > 1):
+            highestNm = 0
+            nmCounts = {}
+            for idx in valid_entries:
+                nmlen = countNm(forwarding_table[idx]['netmask'])
+                nmCounts.append({nmlen, idx})
+            maxnm = max(nmCounts.keys())
+            dups = checkForDups(maxnm, nmCounts.keys())
+            if dups == 1:
+                my_ip = neighborToRouterIP(valid_entries[nmCounts[maxnm]])
+                datapkg = {'src':packet['src'], 'dst':packet['dst'], 'type':'data', 'msg':packet['msg']}
+                datapkgb = dictToByte(datapkg)
+                self.sockets[valid_entries[nmCounts[maxnm]]].sendall(datapkgb)
+            else:
+                get_route(srcif, valid_entries[nmCounts[maxnm]])
         # Scenario 4: tie breaker needed
         return False
 
@@ -247,7 +279,7 @@ class Router:
     def update(self, srcif, packet):
         """	handle update packets	"""
         # adds entry to forwarding table (updates)
-        entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src']}
+        entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'], 'localPref':packet['msg']['localpref'], 'origin':packet['msg']['origin'], 'selfOrigin':packet['msg']['selfOrigin']}
         
         forwarding_table.append(entry)
         self.updates.append(packet)
@@ -260,6 +292,8 @@ class Router:
         
         announcement['msg']['ASPath'].append(args.asn)    
         #print("PACKET: ", packet)
+        srcType = self.relations[packet['src']]
+        if srcType == "cust":
         for n in self.sockets.keys():
             if packet['src'] != n:
                 # creates appropriate python address for announcement source
@@ -271,7 +305,19 @@ class Router:
                 ancts = json.dumps(announcement)
                 anctb = ancts.encode('utf-8')
                 self.sockets[n].sendall(anctb)
-        
+        else:
+            for r in self.relations.keys():
+                if packet['src'] != r and (self.relations(r) == "peer" or self.relations(r) == "prov"):
+                # creates appropriate python address for announcement source
+                dest = neighborToRouterIP(n)
+                # sets the correct values for announcement src, dst, and ancts
+                announcement['src'] = dest
+                announcement['dst'] = n
+                #print("ANNOUNCEMENT: ", announcement)
+                ancts = json.dumps(announcement)
+                anctb = ancts.encode('utf-8')
+                self.sockets[n].sendall(anctb)
+ 
         #print("Updates: ", self.updates)
         #print("Entry: ", entry)
         return False
