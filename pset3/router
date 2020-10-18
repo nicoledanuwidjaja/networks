@@ -2,7 +2,7 @@
 
 import argparse, socket, time, json, select, struct, math
 
-#DEBUG = True
+# DEBUG = True
 DEBUG = False
 
 parser = argparse.ArgumentParser(description='route packets')
@@ -43,11 +43,12 @@ PROV = "prov"
 messages = []
 forwarding_table = []
 
+
 ##########################################################################################
 
 # UTILITY FUNCTIONS
 # convert ip address to binary representation of four 8-bit segments
-def binl(ip):   
+def binl(ip):
     ipl = ip.split(".")
     binl = []
     for n in ipl:
@@ -56,12 +57,13 @@ def binl(ip):
         # add padding for 8-bit segments
         strip = str(binip).zfill(8)
         binl.append(strip)
-    return binl 
+    return binl
+
 
 # calculate the combination for network/netmask addresses
 def combine_submask(netmask_ip, dest_ip):
-    #print("OG Netmask: ", netmask_ip)
-    #print("OG Dest: ", dest_ip)
+    # print("OG Netmask: ", netmask_ip)
+    # print("OG Dest: ", dest_ip)
     combined = []
     # separate bits into four groups of 8-bits
     for b in range(4):
@@ -69,10 +71,11 @@ def combine_submask(netmask_ip, dest_ip):
         finpart = ""
         for s in range(8):
             finpart += str(int(netmask_ip[b][s]) & int(dest_ip[b][s]))
-        #print("Part: ", finpart)
+        # print("Part: ", finpart)
         combined.append(finpart)
-    #print("Combined: ", combined)
+    # print("Combined: ", combined)
     return combined
+
 
 # match combined network/netmask addresses with corresponding neighbor network
 def mask(dest):
@@ -88,6 +91,7 @@ def mask(dest):
         result.append(subresult)
     return result
 
+
 # convert list of binary ips(in list form) to list of dec ips (in list form)
 def ipl(binl):
     ipl = []
@@ -98,7 +102,8 @@ def ipl(binl):
         ipl.append(binp)
     return ipl
 
-# see if a specific network matches a 
+
+# see if a specific network matches a
 # specific destination that has already been masked
 def matchIps(networkipl, destipl):
     for i in range(4):
@@ -107,28 +112,19 @@ def matchIps(networkipl, destipl):
         elif (networkipl[i] != destipl[i]):
             return False
 
-# find the networks in the forwarding table that can route
-# the given destination
-def findDest(result):
-    resultdec = ipl(result)
-    valid_entries = []
-    for i in range(len(result)):
-        ipstr = forwarding_table[i]['network']
-        #print("RESULT IPL: ", resultdec[i])
-        #print("FT IPL: ", ftipl)
-        if matchIps(ipToIntList(ipstr), resultdec[i]):
-            valid_entries.append(i)
-    return valid_entries    
-
 # encodes dictionary as bytes in json format
 def dictToByte(dictionary):
     dictj = json.dumps(dictionary)
     dictb = dictj.encode("utf-8")
     return dictb
 
+
 # converts ip address string to integer list of size four
 def ipToIntList(strl):
     return list(map(int, strl.split('.')))
+
+def ipToValue(ipl):
+    return int("".join(ipl))
 
 # convert ip of neighbor to router (*.*.*.2 to *.*.*.1)
 def neighborToRouterIP(neighbor):
@@ -141,18 +137,26 @@ def countNetmask(nmstr):
     for x in range(len(nmBin)):
         for y in nmBin[x]:
             if y == 1:
-                count +=1
+                count += 1
     return count
 
-def checkForDups(nmmax, nmlist):
+def checkForDups(nmlist):
+    maxnm = max(nmlist)
     count = 0
     for l in nmlist:
-        if l == nmmax:
-            count+=1
+        if l == maxnm:
+            count += 1
     return count
 
-class Router:
+# returns dictionary of length of netmask and index in forwarding table of all valid routes
+def netmaskCounts(valid_entries):
+    nmCounts = {}
+    for idx in valid_entries:
+        nmlen = countNetmask(forwarding_table[idx]['netmask'])
+        nmCounts[nmlen] = idx
+    return nmCounts
 
+class Router:
     routes = None
     updates = None
     relations = None
@@ -166,56 +170,118 @@ class Router:
         for relationship in networks:
             # ip address and type (customer, provider, peer)
             network, relation = relationship.split("-")
-            if DEBUG: 
+            if DEBUG:
                 print("Starting socket for", network, relation)
             self.sockets[network] = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
             self.sockets[network].setblocking(0)
             self.sockets[network].connect(network)
             self.relations[network] = relation
         return
-           
+
+    # find the networks in the forwarding table that can route
+    # the given destination
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
-        # TODO
-        outroutes = []
-        return outroutes
+        port = mask(daddr)
+        resultdec = ipl(port)
+        valid_entries = []
+        for i in range(len(port)):
+            ipstr = forwarding_table[i]['network']
+            # print("RESULT IPL: ", resultdec[i])
+            # print("FT IPL: ", ftipl)
+            if matchIps(ipToIntList(ipstr), resultdec[i]):
+                valid_entries.append(i)
+        return valid_entries
+
 
     def get_shortest_as_path(self, routes):
         """ select the route with the shortest AS Path """
-        # TODO
         outroutes = []
-        return outroutes
-            
-    def get_highest_preference(self, routes):
-        """ select the route with the shortest AS Path """
-        # TODO
-        outroutes = []
-        return outroutes
-         
-    def get_self_origin(self, routes):
-        """ select self originating routes """
-        # TODO
-        outroutes = []
+        pathCounts = {}
+        for routeIdx in routes:
+            currPathLength = len(forwarding_table[routeIdx]['msg']['ASPath'])
+            pathCounts[currPathLength] = routeIdx
+        minPath = min(pathCounts.keys())
+
+        for pathLength, ASPath in pathCounts.items():
+            if pathLength == minPath:
+                outroutes.append(pathLength)
         return outroutes
 
-    def get_origin_routes(self, routes):
-        """ select origin routes: EGP > IGP > UNK """
-        # TODO
+    def get_highest_preference(self, routes):
+        """ select the route with the highest localpref """
         outroutes = []
+        prefRoutes = {}
+        for routeIdx in routes:
+            localPref = forwarding_table[routeIdx]['msg']['localpref']
+            prefRoutes[localPref] = routeIdx
+        highestPref = max(prefRoutes.keys())
+
+        for routePref, localpref in prefRoutes.items():
+            if routePref == highestPref:
+                outroutes.append(routePref)
+        return outroutes
+
+    def get_self_origin(self, routes):
+        """ select self originating routes """
+        outroutes = []
+        for routeIdx in routes:
+            origin = forwarding_table[routeIdx]['msg']['selfOrigin']
+            if origin:
+                outroutes.append(routeIdx)
+
+        if not outroutes:
+            return routes
+        else:
+            return outroutes
+
+    def get_origin_routes(self, routes):
+        """ select origin routes: IGP > EGP > UNK """
+        igpList = []
+        egpList = []
+        unkList = []
+        outroutes = []
+        for routeIdx in routes:
+            originRoute = forwarding_table[routeIdx]['msg']['origin']
+            if originRoute == "IGP":
+                igpList.append(routeIdx)
+            elif originRoute == "EGP":
+                egpList.append(routeIdx)
+            elif originRoute == "UNK":
+                unkList.append(routeIdx)
+
+        if igpList:
+            outroutes = igpList
+        elif egpList:
+            outroutes = egpList
+        elif unkList:
+            outroutes = unkList
+
         return outroutes
 
     def filter_relationships(self, srcif, routes):
         """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
         outroutes = []
+        source = self.relations[srcif]
+        if source == "cust":
+            outroutes = routes
+        else:
+            for r in routes:
+                dest = forwarding_table[r]['type']
+                if dest =="cust":
+                    outroutes.append(r)
         return outroutes
 
-    def get_route(self, srcif, daddr):
+    def get_route(self, srcif, daddr, packet):
         """	Select the best route for a given address	"""
-        # TODO
         peer = None
-        routes = lookup_routers(daddr)
+        routes = self.lookup_routes(daddr)
+        nmCounts = netmaskCounts(routes)
+        maxnm = max(nmCounts.keys())
+        dups = checkForDups(nmCounts.keys())
         # Rules go here
-        if routes:
+        if dups > 1:
+        # Scenario 4
             # 1. Highest Preference
             routes = self.get_highest_preference(routes)
             # 2. Self Origin
@@ -225,21 +291,38 @@ class Router:
             # 4. EGP > IGP > UNK
             routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
-            # TODO
+            ipl = {}
+            ipvlist = {}
+            newRoutes = []
+            for r in routes:
+                ipl.append(forwarding_table[r]['src'], r)
+            for i in ipl.keys():
+                ipnum = ipToValue(i)
+                ipvlist[ipnum] = ipl[i]
+            minipv = min(ipvlist.keys())
+            for m in ipvlist.keys():
+                if minipv == m:
+                    newRoutes.append(ipvlist[m])
+
             # Final check: enforce peering relationships
             routes = self.filter_relationships(srcif, routes)
+
+        else:
+        # Scenario 3
+            my_ip = neighborToRouterIP(nmCounts[maxnm])
+            datapkg = {'src': packet['src'], 'dst': packet['dst'], 'type': 'data', 'msg': packet['msg']}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[routes[nmCounts[maxnm]]].sendall(datapkgb)
         return self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        port = mask(packet['dst'])
-        portipl = ipl(port)
-        #print(portipl)
-        valid_entries = findDest(port)
-        #print(packet)
+        # print(portipl)
+        valid_entries = self.lookup_routes(packet['dst'])
+        # print(packet)
         # Scenario 1: no route
         if (len(valid_entries) == 0):
-            #print("NO VALID ENTRIES")
+            # print("NO VALID ENTRIES")
             my_ip = neighborToRouterIP(packet['src'])
             datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
             datapkgb = dictToByte(datapkg)
@@ -247,27 +330,23 @@ class Router:
         # Scenario 2: one possible route
         elif (len(valid_entries) == 1):
             valid_entry = forwarding_table[valid_entries[0]]
-            #print(valid_entry)
+            # print(valid_entry)
             my_ip = neighborToRouterIP(valid_entry['peer'])
             datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
             datapkgb = dictToByte(datapkg)
             self.sockets[valid_entry['peer']].sendall(datapkgb)
         # Scenario 3: multiple possible routes
-        elif(len(valid_entries) > 1):
-            highestNm = 0
-            nmCounts = {}
-            for idx in valid_entries:
-                nmlen = countNm(forwarding_table[idx]['netmask'])
-                nmCounts.append({nmlen, idx})
-            maxnm = max(nmCounts.keys())
-            dups = checkForDups(maxnm, nmCounts.keys())
-            if dups == 1:
-                my_ip = neighborToRouterIP(valid_entries[nmCounts[maxnm]])
-                datapkg = {'src':packet['src'], 'dst':packet['dst'], 'type':'data', 'msg':packet['msg']}
-                datapkgb = dictToByte(datapkg)
-                self.sockets[valid_entries[nmCounts[maxnm]]].sendall(datapkgb)
+        elif (len(valid_entries) > 1):
+            routes = self.get_route(srcif, packet['dst'], packet)
+            if not routes:
+                my_ip = neighborToRouterIP(packet['src'])
+                datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
             else:
-                get_route(srcif, valid_entries[nmCounts[maxnm]])
+                table_entry = forwarding_table[routes[0]]
+                my_ip = neighborToRouterIP(table_entry['peer'])
+                datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
+                datapkgb = dictToByte(datapkg)
+                self.sockets[table_entry['peer']].sendall(datapkgb)
         # Scenario 4: tie breaker needed
         return False
 
@@ -279,8 +358,10 @@ class Router:
     def update(self, srcif, packet):
         """	handle update packets	"""
         # adds entry to forwarding table (updates)
-        entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'], 'localPref':packet['msg']['localpref'], 'origin':packet['msg']['origin'], 'selfOrigin':packet['msg']['selfOrigin']}
-        
+        entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'],
+                 'localPref': packet['msg']['localpref'], 'origin': packet['msg']['origin'],
+                 'selfOrigin': packet['msg']['selfOrigin']}
+
         forwarding_table.append(entry)
         self.updates.append(packet)
         announcement = {"type": "update", "src": "", "dst": "",
@@ -289,22 +370,22 @@ class Router:
                                 "origin": packet['msg']['origin'], "selfOrigin": packet['msg']['selfOrigin']}}
         for a in packet['msg']['ASPath']:
             announcement['msg']['ASPath'].append(a)
-        
-        announcement['msg']['ASPath'].append(args.asn)    
-        #print("PACKET: ", packet)
+
+        announcement['msg']['ASPath'].append(args.asn)
+        # print("PACKET: ", packet)
         srcType = self.relations[packet['src']]
         if srcType == "cust":
-        for n in self.sockets.keys():
-            if packet['src'] != n:
-                # creates appropriate python address for announcement source
-                dest = neighborToRouterIP(n)
-                # sets the correct values for announcement src, dst, and ancts
-                announcement['src'] = dest
-                announcement['dst'] = n
-                #print("ANNOUNCEMENT: ", announcement)
-                ancts = json.dumps(announcement)
-                anctb = ancts.encode('utf-8')
-                self.sockets[n].sendall(anctb)
+            for n in self.sockets.keys():
+                if packet['src'] != n:
+                    # creates appropriate python address for announcement source
+                    dest = neighborToRouterIP(n)
+                    # sets the correct values for announcement src, dst, and ancts
+                    announcement['src'] = dest
+                    announcement['dst'] = n
+                    # print("ANNOUNCEMENT: ", announcement)
+                    ancts = json.dumps(announcement)
+                    anctb = ancts.encode('utf-8')
+                    self.sockets[n].sendall(anctb)
         else:
             for r in self.relations.keys():
                 if packet['src'] != r and (self.relations(r) == "peer" or self.relations(r) == "prov"):
@@ -313,15 +394,15 @@ class Router:
                 # sets the correct values for announcement src, dst, and ancts
                 announcement['src'] = dest
                 announcement['dst'] = n
-                #print("ANNOUNCEMENT: ", announcement)
+                # print("ANNOUNCEMENT: ", announcement)
                 ancts = json.dumps(announcement)
                 anctb = ancts.encode('utf-8')
                 self.sockets[n].sendall(anctb)
- 
-        #print("Updates: ", self.updates)
-        #print("Entry: ", entry)
+
+        # print("Updates: ", self.updates)
+        # print("Entry: ", entry)
         return False
-    
+
     def revoke(self, packet):
         """	handle revoke packets	"""
         # TODO
@@ -330,7 +411,7 @@ class Router:
     def dump(self, packet):
         """	handles dump table requests	"""
         print("DUMPING")
-        dumppkg = { 'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': forwarding_table}
+        dumppkg = {'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': forwarding_table}
         dumppkgb = dictToByte(dumppkg)
         print(packet['src'])
         print(forwarding_table)
@@ -375,8 +456,9 @@ class Router:
                         self.send_error(conn, msg)
                 else:
                     return
-                #print(messages)
+                # print(messages)
         return
+
 
 if __name__ == "__main__":
     router = Router(args.networks)
