@@ -140,7 +140,7 @@ def countNetmask(nmstr):
     count = 0
     for x in range(len(nmBin)):
         for y in nmBin[x]:
-            if y == 1:
+            if int(y) == 1:
                 count += 1
     return count
 
@@ -156,11 +156,19 @@ def checkForDups(nmlist):
 # returns dictionary of length of netmask and index in forwarding table of all valid routes
 def netmaskCounts(valid_entries):
     nmCounts = {}
-    for idx in valid_entries:
+    for idx in range(len(valid_entries)):
         nmlen = countNetmask(forwarding_table[idx]['netmask'])
-        nmCounts[nmlen] = idx
+        nmCounts[idx] = nmlen
     return nmCounts
 
+def get_key(val, dictionary):
+    print(dictionary)
+    for key, value in dictionary.items():
+        print("val: ", value)
+        print("key: ", key)
+        if val == value:
+            return key
+    return "key doesnt exist"
 
 class Router:
     routes = None
@@ -282,7 +290,7 @@ class Router:
         peer = None
         routes = self.lookup_routes(daddr)
         nmCounts = netmaskCounts(routes)
-        maxnm = max(nmCounts.keys())
+        maxnm = max(nmCounts.values())
         dups = checkForDups(nmCounts.keys())
         # Rules go here
         if dups > 1:
@@ -310,20 +318,17 @@ class Router:
                     newRoutes.append(ipvlist[m])
 
             # Final check: enforce peering relationships
-            routes = self.filter_relationships(srcif, routes)
-
-        else:
+            self.routes = self.filter_relationships(srcif, routes)
             # Scenario 3
-            my_ip = neighborToRouterIP(nmCounts[maxnm])
-            datapkg = {'src': packet['src'], 'dst': packet['dst'], 'type': 'data', 'msg': packet['msg']}
-            datapkgb = dictToByte(datapkg)
-            self.sockets[routes[nmCounts[maxnm]]].sendall(datapkgb)
-        return self.sockets[peer] if peer else None
+            #my_ip = neighborToRouterIP(nmCounts[maxnm])
+        #return self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
         # print(portipl)
         valid_entries = self.lookup_routes(packet['dst'])
+        nmCounts = netmaskCounts(self.routes)
+        maxnm = max(nmCounts.values())
         # print(packet)
         # Scenario 1: no route
         if (len(valid_entries) == 0):
@@ -343,15 +348,19 @@ class Router:
         # Scenario 3: multiple possible routes
         elif (len(valid_entries) > 1):
             routes = self.get_route(srcif, packet['dst'], packet)
+            datapkgb = {}
             if not routes:
                 my_ip = neighborToRouterIP(packet['src'])
                 datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
             else:
                 table_entry = forwarding_table[routes[0]]
                 my_ip = neighborToRouterIP(table_entry['peer'])
+                print(my_ip)
                 datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
-                datapkgb = dictToByte(datapkg)
-                self.sockets[table_entry['peer']].sendall(datapkgb)
+            datapkgb = dictToByte(datapkg)
+            self.sockets[forwarding_table[routes[get_key(maxnm, nmCounts)]]['peer']].sendall(datapkgb)
+
+
         # Scenario 4: tie breaker needed
         return False
 
@@ -395,10 +404,10 @@ class Router:
             for r in self.relations.keys():
                 if packet['src'] != r and (self.relations(r) == "peer" or self.relations(r) == "prov"):
                     # creates appropriate python address for announcement source
-                    dest = neighborToRouterIP(n)
+                    dest = neighborToRouterIp(r)
                     # sets the correct values for announcement src, dst, and ancts
                     announcement['src'] = dest
-                    announcement['dst'] = n
+                    announcement['dst'] = r
                     # print("ANNOUNCEMENT: ", announcement)
                     ancts = json.dumps(announcement)
                     anctb = ancts.encode('utf-8')
