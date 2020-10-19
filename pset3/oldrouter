@@ -2,7 +2,7 @@
 
 import argparse, socket, time, json, select, struct, math
 
-#DEBUG = True
+# DEBUG = True
 DEBUG = False
 
 parser = argparse.ArgumentParser(description='route packets')
@@ -43,15 +43,10 @@ PROV = "prov"
 messages = []
 forwarding_table = []
 
+
 ##########################################################################################
 
-# convert ip of neighbor to oldrouter (*.*.*.2 to *.*.*.1)
-def neighborToRouterIP(neighbor):
-    return '.'.join(neighbor.split('.')[:-1] + ["1"])
-
-def ipToValue(ipl):
-    return int("".join(ipl))
-
+# UTILITY FUNCTIONS
 # convert ip address to binary representation of four 8-bit segments
 def binl(ip):
     ipl = ip.split(".")
@@ -63,6 +58,7 @@ def binl(ip):
         strip = str(binip).zfill(8)
         binl.append(strip)
     return binl
+
 
 # calculate the combination for network/netmask addresses
 def combine_submask(netmask_ip, dest_ip):
@@ -80,6 +76,7 @@ def combine_submask(netmask_ip, dest_ip):
     # print("Combined: ", combined)
     return combined
 
+
 # match combined network/netmask addresses with corresponding neighbor network
 def mask(dest):
     result = []
@@ -93,6 +90,7 @@ def mask(dest):
         subresult = combine_submask(nmbinl, destbinl)
         result.append(subresult)
     return result
+
 
 # convert list of binary ips(in list form) to list of dec ips (in list form)
 def ipl(binl):
@@ -114,15 +112,27 @@ def matchIps(networkipl, destipl):
         elif networkipl[i] != destipl[i]:
             return False
 
+
 # encodes dictionary as bytes in json format
 def dictToByte(dictionary):
     dictj = json.dumps(dictionary)
     dictb = dictj.encode("utf-8")
     return dictb
 
+
 # converts ip address string to integer list of size four
 def ipToIntList(strl):
     return list(map(int, strl.split('.')))
+
+
+def ipToValue(ipl):
+    return int("".join(ipl))
+
+
+# convert ip of neighbor to oldrouter (*.*.*.2 to *.*.*.1)
+def neighborToRouterIP(neighbor):
+    return '.'.join(neighbor.split('.')[:-1] + ["1"])
+
 
 # returns the length of the netmask
 def countNetmask(nmstr):
@@ -134,8 +144,37 @@ def countNetmask(nmstr):
                 count += 1
     return count
 
-class Router:
 
+# count number of duplicates of the max number
+def checkForDups(nmlist):
+    maxnm = max(nmlist)
+    count = 0
+    for l in nmlist:
+        if l == maxnm:
+            count += 1
+    return count
+
+
+# returns dictionary of length of netmask and index in forwarding table of all valid routes
+def netmaskCounts(valid_entries):
+    nmCounts = {}
+    for idx in range(len(valid_entries)):
+        nmlen = countNetmask(forwarding_table[idx]['netmask'])
+        nmCounts[idx] = nmlen
+    return nmCounts
+
+
+def get_key(val, dictionary):
+    print(dictionary)
+    for key, value in dictionary.items():
+        print("val: ", value)
+        print("key: ", key)
+        if val == value:
+            return key
+    return "key doesnt exist"
+
+
+class Router:
     routes = None
     updates = None
     relations = None
@@ -144,11 +183,10 @@ class Router:
     def __init__(self, networks):
         self.routes = []
         self.updates = []
-        # {network IP of neighbor : the kind of neighbor they are (peer, prov, cust) }
         self.relations = {}
-        # {network IP of neighbor : corresponding socket}
         self.sockets = {}
         for relationship in networks:
+            # ip address and type (customer, provider, peer)
             network, relation = relationship.split("-")
             if DEBUG:
                 print("Starting socket for", network, relation)
@@ -158,54 +196,57 @@ class Router:
             self.relations[network] = relation
         return
 
-
+    # find the networks in the forwarding table that can route
+    # the given destination
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
         port = mask(daddr)
         resultdec = ipl(port)
-        outroutes = []
+        valid_entries = []
         for i in range(len(port)):
             ipstr = forwarding_table[i]['network']
+            # print("RESULT IPL: ", resultdec[i])
+            # print("FT IPL: ", ftipl)
             if matchIps(ipToIntList(ipstr), resultdec[i]):
-                outroutes.append(forwarding_table[i])
-        return outroutes
+                valid_entries.append(i)
+        return valid_entries
 
     def get_shortest_as_path(self, routes):
         """ select the route with the shortest AS Path """
         outroutes = []
-        # {length of AS Path : corresponding entry from forwarding table}
         pathCounts = {}
-        for entry in routes:
-            currPathLength = len(entry['msg']['ASPath'])
-            pathCounts[currPathLength] = entry
+        for routeIdx in routes:
+            currPathLength = len(forwarding_table[routeIdx]['msg']['ASPath'])
+            pathCounts[currPathLength] = routeIdx
         minPath = min(pathCounts.keys())
 
-        for pathLength in pathCounts.keys():
+        for pathLength, ASPath in pathCounts.items():
             if pathLength == minPath:
-                outroutes.append(pathCounts[pathLength])
+                outroutes.append(pathLength)
         return outroutes
 
     def get_highest_preference(self, routes):
-        """ select the route with the shortest AS Path """
+        """ select the route with the highest localpref """
         outroutes = []
-        # {localPref : corresponding entry from forwarding table with that localPref #}
         prefRoutes = {}
-        for entry in routes:
-            localPref = entry['msg']['localpref']
-            prefRoutes[localPref] = entry
+        for routeIdx in routes:
+            localPref = forwarding_table[routeIdx]['msg']['localpref']
+            prefRoutes[localPref] = routeIdx
         highestPref = max(prefRoutes.keys())
-        for localpref in prefRoutes.keys():
-            if localpref == highestPref:
-                outroutes.append(prefRoutes[localpref])
+
+        for routePref, localpref in prefRoutes.items():
+            if routePref == highestPref:
+                outroutes.append(routePref)
         return outroutes
 
     def get_self_origin(self, routes):
         """ select self originating routes """
         outroutes = []
-        for entry in routes:
-            origin = entry['msg']['selfOrigin']
+        for routeIdx in routes:
+            origin = forwarding_table[routeIdx]['msg']['selfOrigin']
             if origin:
-                outroutes.append(entry)
+                outroutes.append(routeIdx)
+
         if not outroutes:
             return routes
         else:
@@ -217,14 +258,14 @@ class Router:
         egpList = []
         unkList = []
         outroutes = []
-        for entry in routes:
-            originRoute = entry['msg']['origin']
+        for routeIdx in routes:
+            originRoute = forwarding_table[routeIdx]['msg']['origin']
             if originRoute == "IGP":
-                igpList.append(entry)
+                igpList.append(routeIdx)
             elif originRoute == "EGP":
-                egpList.append(entry)
+                egpList.append(routeIdx)
             elif originRoute == "UNK":
-                unkList.append(entry)
+                unkList.append(routeIdx)
 
         if igpList:
             outroutes = igpList
@@ -235,24 +276,6 @@ class Router:
 
         return outroutes
 
-    def lowest_ip(self, routes):
-        """ return the neighbor router (i.e. the "src" of the update message) with the lowest IP address """
-        outroutes = []
-        # {'src' of entry : entry }
-        iplist = {}
-        # {'src' of entry in number form : entry }
-        ipvlist = {}
-        for entry in routes:
-            iplist[entry['peer']] = entry
-        for r in iplist.keys():
-            ipnum = ipToValue(r)
-            ipvlist[ipnum] = ipl[r]
-        minipv = min(ipvlist.keys())
-        for m in ipvlist.keys():
-            if minipv == m:
-                outroutes.append(ipvlist[m])
-        return outroutes
-
     def filter_relationships(self, srcif, routes):
         """ Don't allow Peer->Peer, Peer->Prov, or Prov->Peer forwards """
         outroutes = []
@@ -260,18 +283,21 @@ class Router:
         if source == "cust":
             outroutes = routes
         else:
-            for entry in routes:
-                dest = entry['type']
+            for r in routes:
+                dest = forwarding_table[r]['type']
                 if dest == "cust":
-                    outroutes.append(entry)
+                    outroutes.append(r)
         return outroutes
 
-
-    def get_route(self, srcif, daddr, routes):
+    def get_route(self, srcif, daddr):
         """	Select the best route for a given address	"""
-        peer = None
+        # peer = None
+        routes = self.lookup_routes(daddr)
+        nmCounts = netmaskCounts(routes)
+        dups = checkForDups(nmCounts.keys())
         # Rules go here
-        if routes:
+        if dups > 1:
+            # Scenario 4
             # 1. Highest Preference
             routes = self.get_highest_preference(routes)
             # 2. Self Origin
@@ -281,81 +307,64 @@ class Router:
             # 4. EGP > IGP > UNK
             routes = self.get_origin_routes(routes)
             # 5. Lowest IP Address
-            routes = self.lowest_ip(routes)
+            ipl = {}
+            ipvlist = {}
+            newRoutes = []
+            for r in routes:
+                ipl.append(forwarding_table[r]['src'], r)
+            for i in ipl.keys():
+                ipnum = ipToValue(i)
+                ipvlist[ipnum] = ipl[i]
+            minipv = min(ipvlist.keys())
+            for m in ipvlist.keys():
+                if minipv == m:
+                    newRoutes.append(ipvlist[m])
+
             # Final check: enforce peering relationships
-            routes = self.filter_relationships(srcif, routes)
-
-        # return the peer to send the msg through, else return nothing
-        if len(routes) == 0:
-            return None
+            return self.filter_relationships(srcif, routes)
         else:
-            return routes[0]
-        #return self.sockets[peer] if peer else None
-
-    def longest_prefix(self, routes):
-        # count netmasks of each route
-        outroutes = []
-        # {length of netmask : corresponding forwarding table entry
-        nmCounts = {}
-        for entry in routes:
-            nmlen = countNetmask(entry['netmask'])
-            nmCounts[nmlen] = entry
-        # find max netmask = maxNM
-        maxNM = max(nmCounts.keys())
-        # return list of routes with that maxNM
-        for nm in nmCounts:
-            if nm == maxNM:
-                outroutes.append(nmCounts[nm])
-        return outroutes
-
-    # sends a no route msg to src of packet
-    def send_no_route(self, packet):
-        my_ip = neighborToRouterIP(packet['src'])
-        datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
-        datapkgb = dictToByte(datapkg)
-        self.sockets[packet['src']].sendall(datapkgb)
-
-    def send_one_route(self, packet, route):
-        my_ip = neighborToRouterIP(route['peer'])
-        datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
-        datapkgb = dictToByte(datapkg)
-        self.sockets[route['peer']].sendall(datapkgb)
+            # Scenario 3
+            return routes
+            # my_ip = neighborToRouterIP(nmCounts[maxnm])
+        # return self.sockets[peer] if peer else None
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        # lookup all valid routes for an address
-        routes = self.lookup_routes(packet['dst'])
-        numRoutes = len(routes)
+        # print(portipl)
+        valid_entries = self.lookup_routes(packet['dst'])
+        # print(packet)
+        # Scenario 1: no route
+        if len(valid_entries) == 0:
+            # print("NO VALID ENTRIES")
+            my_ip = neighborToRouterIP(packet['src'])
+            datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[packet['src']].sendall(datapkgb)
+        # Scenario 2: one possible route
+        elif len(valid_entries) == 1:
+            valid_entry = forwarding_table[valid_entries[0]]
+            # print(valid_entry)
+            my_ip = neighborToRouterIP(valid_entry['peer'])
+            datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[valid_entry['peer']].sendall(datapkgb)
+        # Scenario 3: multiple possible routes
+        elif len(valid_entries) > 1:
+            routes = self.get_route(srcif, packet['dst'])
+            nmCounts = netmaskCounts(self.routes)
+            maxnm = max(nmCounts.values())
+            if not routes:
+                my_ip = neighborToRouterIP(packet['src'])
+                datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
+            else:
+                table_entry = forwarding_table[routes[0]]
+                my_ip = neighborToRouterIP(table_entry['peer'])
+                print(my_ip)
+                datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
+            datapkgb = dictToByte(datapkg)
+            self.sockets[forwarding_table[routes[get_key(maxnm, nmCounts)]]['peer']].sendall(datapkgb)
 
-        # Scenario 1: no route => send a "no route" msg back to the src of the data packet
-        if numRoutes == 0:
-            self.send_no_route(packet)
-        # Scenario 2 - 4
-        elif numRoutes >= 1:
-            daddr = packet['dst']
-            # Scenario 2: one possible route
-            if numRoutes == 1:
-                route = routes[0]
-                self.send_one_route(packet, route)
-            elif numRoutes > 1:
-                routes = self.longest_prefix(routes)
-                numRoutes = len(routes)
-                # Scenario 3: longest prefix
-                if numRoutes == 1:
-                    # if longest prefix returned only one route, make that the route to take
-                    route = routes[0]
-                    self.send_one_route(packet, route)
-                # Scenario 4: tie breakers
-                elif numRoutes > 1:
-                    # if not, then go to get_route to apply the tie-breaker rules
-                    route = self.get_route(srcif, daddr, routes)
-                    if not route:
-                        self.send_no_route(packet)
-                    else:
-                        self.send_one_route(packet, route)
-
-
-
+        # Scenario 4: tie breaker needed
         return False
 
     def coalesce(self):
@@ -406,6 +415,9 @@ class Router:
                     ancts = json.dumps(announcement)
                     anctb = ancts.encode('utf-8')
                     self.sockets[r].sendall(anctb)
+
+        # print("Updates: ", self.updates)
+        # print("Entry: ", entry)
         return False
 
     def revoke(self, packet):
@@ -435,6 +447,7 @@ class Router:
 
     def run(self):
         while True:
+            # opens and listens to Unix domain sockets
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
             for conn in socks:
                 try:
@@ -445,6 +458,7 @@ class Router:
                 if k:
                     for sock in self.sockets:
                         if self.sockets[sock] == conn:
+                            # source interface: source port/socket of data message
                             srcif = sock
                     msg = json.loads(k)
                     message = {"type": msg['type'], "dst": msg['dst'], "src": msg['src'], "msg": msg['msg']}
@@ -459,8 +473,9 @@ class Router:
                         self.send_error(conn, msg)
                 else:
                     return
-                print(messages)
+                # print(messages)
         return
+
 
 if __name__ == "__main__":
     router = Router(args.networks)
