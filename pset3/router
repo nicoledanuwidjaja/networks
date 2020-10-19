@@ -112,6 +112,7 @@ def matchIps(networkipl, destipl):
         elif (networkipl[i] != destipl[i]):
             return False
 
+
 # encodes dictionary as bytes in json format
 def dictToByte(dictionary):
     dictj = json.dumps(dictionary)
@@ -123,12 +124,15 @@ def dictToByte(dictionary):
 def ipToIntList(strl):
     return list(map(int, strl.split('.')))
 
+
 def ipToValue(ipl):
     return int("".join(ipl))
+
 
 # convert ip of neighbor to router (*.*.*.2 to *.*.*.1)
 def neighborToRouterIP(neighbor):
     return '.'.join(neighbor.split('.')[:-1] + ["1"])
+
 
 # returns the length of the netmask
 def countNetmask(nmstr):
@@ -140,6 +144,7 @@ def countNetmask(nmstr):
                 count += 1
     return count
 
+# count number of duplicates of the max number
 def checkForDups(nmlist):
     maxnm = max(nmlist)
     count = 0
@@ -155,6 +160,7 @@ def netmaskCounts(valid_entries):
         nmlen = countNetmask(forwarding_table[idx]['netmask'])
         nmCounts[nmlen] = idx
     return nmCounts
+
 
 class Router:
     routes = None
@@ -192,7 +198,6 @@ class Router:
             if matchIps(ipToIntList(ipstr), resultdec[i]):
                 valid_entries.append(i)
         return valid_entries
-
 
     def get_shortest_as_path(self, routes):
         """ select the route with the shortest AS Path """
@@ -268,7 +273,7 @@ class Router:
         else:
             for r in routes:
                 dest = forwarding_table[r]['type']
-                if dest =="cust":
+                if dest == "cust":
                     outroutes.append(r)
         return outroutes
 
@@ -281,7 +286,7 @@ class Router:
         dups = checkForDups(nmCounts.keys())
         # Rules go here
         if dups > 1:
-        # Scenario 4
+            # Scenario 4
             # 1. Highest Preference
             routes = self.get_highest_preference(routes)
             # 2. Self Origin
@@ -308,7 +313,7 @@ class Router:
             routes = self.filter_relationships(srcif, routes)
 
         else:
-        # Scenario 3
+            # Scenario 3
             my_ip = neighborToRouterIP(nmCounts[maxnm])
             datapkg = {'src': packet['src'], 'dst': packet['dst'], 'type': 'data', 'msg': packet['msg']}
             datapkgb = dictToByte(datapkg)
@@ -389,15 +394,15 @@ class Router:
         else:
             for r in self.relations.keys():
                 if packet['src'] != r and (self.relations(r) == "peer" or self.relations(r) == "prov"):
-                # creates appropriate python address for announcement source
-                dest = neighborToRouterIP(n)
-                # sets the correct values for announcement src, dst, and ancts
-                announcement['src'] = dest
-                announcement['dst'] = n
-                # print("ANNOUNCEMENT: ", announcement)
-                ancts = json.dumps(announcement)
-                anctb = ancts.encode('utf-8')
-                self.sockets[n].sendall(anctb)
+                    # creates appropriate python address for announcement source
+                    dest = neighborToRouterIP(n)
+                    # sets the correct values for announcement src, dst, and ancts
+                    announcement['src'] = dest
+                    announcement['dst'] = n
+                    # print("ANNOUNCEMENT: ", announcement)
+                    ancts = json.dumps(announcement)
+                    anctb = ancts.encode('utf-8')
+                    self.sockets[n].sendall(anctb)
 
         # print("Updates: ", self.updates)
         # print("Entry: ", entry)
