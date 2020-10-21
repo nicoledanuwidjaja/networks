@@ -50,6 +50,9 @@ forwarding_table = []
 def neighborToRouterIP(neighbor):
     return '.'.join(neighbor.split('.')[:-1] + ["1"])
 
+# convert ip of neighbor to oldrouter (*.*.*.2 to *.*.*.1)
+def routerToNeighborIP(router):
+    return '.'.join(router.split('.')[:-1] + ["2"])
 
 def ipToValue(ip):
     return int(ip.replace('.', ''))
@@ -167,12 +170,12 @@ class Router:
             self.relations[network] = relation
         return
 
-    def remove_entries(self, msgs):
+    def remove_entries(self, src,msgs):
         """ Finds messages to be revoked and removes from forwarding table"""
         print("Messages to be removed: ", msgs)
         for msg in msgs:
             for entry in forwarding_table:
-                if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask']:
+                if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
                     forwarding_table.remove(entry)
                     print("Removed entry: ", entry)
 
@@ -203,18 +206,20 @@ class Router:
         return outroutes
 
     def get_highest_preference(self, routes):
-        """ select the route with the shortest AS Path """
+        """ select the route with the highest localpref """
         outroutes = []
         # {localPref : corresponding entry from forwarding table with that localPref #}
-        prefRoutes = {}
-        print(routes)
+        prefRoutes = []
         for entry in routes:
             localPref = entry['localpref']
-            prefRoutes[localPref] = entry
-        highestPref = max(prefRoutes.keys())
-        for localpref in prefRoutes.keys():
+            print("LOCALPREF ", localPref)
+            prefRoutes.append(localPref)
+        highestPref = max(prefRoutes)
+        for entry in routes:
+            localpref = entry['localpref']
             if localpref == highestPref:
-                outroutes.append(prefRoutes[localpref])
+                outroutes.append(entry)
+        print("HIGHEST PREF: ", outroutes)
         return outroutes
 
     def get_self_origin(self, routes):
@@ -223,6 +228,7 @@ class Router:
         for entry in routes:
             origin = entry['selfOrigin']
             if origin:
+                print("SELFORIGIN IS TRUE ", entry)
                 outroutes.append(entry)
         if not outroutes:
             return routes
@@ -342,13 +348,14 @@ class Router:
         return outroutes
 
     # sends a no route msg to src of packet
-    def send_no_route(self, packet):
+    def send_no_route(self, srcif, packet):
         my_ip = neighborToRouterIP(packet['src'])
         datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
         datapkgb = dictToByte(datapkg)
-        print("Sending no route message")
+        print("NO ROUTE NO ROUTE NO ROUTE NO ROUTE")
+        neighbor_ip = routerToNeighborIP(packet['src'])
         try:
-            self.sockets[packet['src']].sendall(datapkgb)
+            self.sockets[srcif].sendall(datapkgb)
         except socket.error as e:
             print("Socket failed to send: ", e)
             sys.exit(1)
@@ -405,11 +412,13 @@ class Router:
 
         # Scenario 1: no route => send a "no route" msg back to the src of the data packet
         if numRoutes == 0:
-            self.send_no_route(packet)
+            print("Scenario 1")
+            self.send_no_route(srcif, packet)
         # Scenario 2 - 4
         daddr = packet['dst']
         # Scenario 2: one possible route
         if numRoutes == 1:
+            print("Scenario 2")
             route = routes[0]
             self.send_one_route(packet, route) 
         elif numRoutes > 1: 
@@ -428,7 +437,7 @@ class Router:
                 # if not, then go to get_route to apply the tie-breaker rules
                 route = self.get_route(srcif, daddr, routes)
                 if not route:
-                   self.send_no_route(packet)
+                   self.send_no_route(srcif, packet)
                 else:
                    self.send_one_route(packet, route)
 
@@ -457,14 +466,13 @@ class Router:
             announcement['msg']['ASPath'].append(a)
 
         announcement['msg']['ASPath'].append(args.asn)
-        # print("PACKET: ", packet)
         self.broadcast(announcement, packet)
         return False
 
     def revoke(self, packet):
         """	handle revoke packets """
         msg = packet['msg']
-        self.remove_entries(msg)
+        self.remove_entries(packet['src'], msg)
         print("Revoke message")
         announcement = {"src": "", "dst": "", "type": "revoke",
                         "msg": msg}
