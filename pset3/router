@@ -54,8 +54,43 @@ def neighborToRouterIP(neighbor):
 def routerToNeighborIP(router):
     return '.'.join(router.split('.')[:-1] + ["2"])
 
+# converts an ip to its value by int
 def ipToValue(ip):
     return int(ip.replace('.', ''))
+
+# converts a netmask number (aka how many 1's there are in its binary form) 
+# (IE: 8, 16,24, 32, etc) to its IP representation
+# by first converting it to binary and then calculating the int
+# and then turning it back into IP
+# tbh idk if i did this correctly i havent tested it
+def netmaskNumToIP(num):
+    full = num/8
+    part = num%8
+    remainder = 4 - (full + 1)
+    nmIP = ""
+    partIPstr = ""
+
+    for f in range(full):
+        nmIP+="255."
+
+    for p in range(part):
+        partIPstr+="1"
+
+    partIPstr = partIPstr.ljust(8, '0')
+
+    partIPint = int(partIPstr, 2)
+    partIP = str(partIPInt)
+
+    nmIP+=partIP
+
+    if remainder != 0:
+        for r in range(remainder):
+            nmIP+=".0"
+
+    return nmIP
+            
+
+
 
 
 # convert ip address to binary representation of four 8-bit segments
@@ -296,7 +331,7 @@ class Router:
         return outroutes
 
     def get_route(self, srcif, daddr, routes):
-        """	Select the best route for a given address	"""
+        """ Select the best route for a given address   """
         # peer = None
         # Rules go here
         if routes:
@@ -405,7 +440,7 @@ class Router:
         print("Finished broadcasting")
 
     def forward(self, srcif, packet):
-        """	Forward a data packet	"""
+        """ Forward a data packet   """
         # lookup all valid routes for an address
         routes = self.lookup_routes(packet['dst'])
         numRoutes = len(routes)
@@ -449,21 +484,88 @@ class Router:
 
         return False
 
+    # checks if two ASPaths are identical
+    def compare_ASPaths(first, sec):
+        firstlen = len(first)
+        seclen = len(sec)
+
+        if (firstlen != seclen):
+            return False
+        else:
+            for x in range(firstlen):
+                if first[x] != sec[x]:
+                    return False
+        return True
+
+    # checks if two entries in the forwarding table can be combined
+    def compare_entries(first, sec):
+        return first['netmask'] == sec['netmask']
+        and first['peer'] == sec['peer'] 
+        and first['localpref'] == sec['localpref'] 
+        and first['origin'] == sec['origin'] 
+        and first['selfOrigin'] == sec['selfOrigin']
+        and compare_ASPaths(first['ASPath'], sec['ASPath'])
+        and is_adjacent(first, sec)
+
+    # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
+    # I probably couldve done this in int form to make it less complicated but i didnt bc im dumb :(
+    def is_adjacent(first, sec):
+        firstnw = first['network']
+        firstnm = first['netmask']
+        firstnmbin = binl(firstnw)
+        secnw = sec['network']
+        secnm = sec['netmask']
+        secnmbin = binl(secnw)
+        nmlen = countNetmask(firstnm)
+        for x in range (nmlen - 1):
+            sec1 = x/4
+            sec2 = x%8
+            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
+                return False
+        return True
+
+    # combines 2 entries in the forwarding table
+    def combine_entries(first, sec):
+        firstnw = ipToValue(first['network'])
+        secnw = ipToValue(sec['network'])
+        nm = first['netmask']
+        nmlen = countNetmask(nm) - 1
+
+        if (firstnw > secnw):
+            forwarding_table.remove(firstnw)
+            secnw['netmask'] = netmaskNumToIP(nmlen)
+        else:
+            forwarding_table.remove(secnw)
+            firstmw['netmask'] = netmaskNumToIP(nmlen)
+
+
+
     def coalesce(self):
-        """	coalesce any routes that are right next to each other	"""
+        """ coalesce any routes that are right next to each other   """
         # TODO (this is the most difficult task, save until last)
-        print("AGGREGATING ", forwarding_table)
+        print("BEFORE AGGREGATION ", forwarding_table)
+        ftlen = len(forwarding_table)
+
+        # for f in range(ftlen):
+        #     entry1 = forwarding_table[f]
+        #     for t in range(ftlen):
+        #         if (f != t):
+        #             entry2 = forwarding_table[t]
+        #             if compare_entries(entry1, entry2):
+        #                 combine_entries(entry1, entry2)
+
+        print("AFTER AGGREGATION ", forwarding_table)
         return False
 
     def update(self, srcif, packet):
-        """	handle update packets	"""
+        """ handle update packets   """
         # adds entry to forwarding table (updates)
         entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'],
                  'localpref': packet['msg']['localpref'], 'origin': packet['msg']['origin'],
                  'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath']}
 
         forwarding_table.append(entry)
-        self.coalesce()
+        #self.coalesce()
         self.updates.append(packet)
         print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
@@ -478,7 +580,7 @@ class Router:
         return False
 
     def revoke(self, packet):
-        """	handle revoke packets """
+        """ handle revoke packets """
         msg = packet['msg']
         self.remove_entries(packet['src'], msg)
         print("Revoke message")
@@ -488,7 +590,7 @@ class Router:
         return True
 
     def dump(self, packet):
-        """	handles dump table requests	"""
+        """ handles dump table requests """
         print("DUMPING")
         dumppkg = {'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': forwarding_table}
         dumppkgb = dictToByte(dumppkg)
@@ -498,7 +600,7 @@ class Router:
         return True
 
     def handle_packet(self, srcif, packet):
-        """	dispatches a packet """
+        """ dispatches a packet """
         # TODO
         return False
 
