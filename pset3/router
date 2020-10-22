@@ -423,8 +423,6 @@ class Router:
             srcType = self.relations[srcif]
             dstIP = route['peer']
             dstType = self.relations[dstIP]
-            print("SRCTYPE ", srcType)
-            print("DSTTYPE ", dstType)
             if (srcType != "cust" and dstType != "cust"):
                 self.send_no_route(srcif, packet)
             else: 
@@ -454,6 +452,7 @@ class Router:
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
         # TODO (this is the most difficult task, save until last)
+        print("AGGREGATING ", forwarding_table)
         return False
 
     def update(self, srcif, packet):
@@ -464,6 +463,7 @@ class Router:
                  'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath']}
 
         forwarding_table.append(entry)
+        self.coalesce()
         self.updates.append(packet)
         print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
