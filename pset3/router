@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import argparse, socket, time, json, select, struct, math
+import argparse, socket, time, json, select, struct, math, operator
 
 # DEBUG = True
 DEBUG = False
@@ -46,51 +46,44 @@ forwarding_table = []
 
 ##########################################################################################
 ######### UTILITY FUNCTIONS #########
-# convert ip of neighbor to oldrouter (*.*.*.2 to *.*.*.1)
+# convert ip of neighbor to router (*.*.*.2 to *.*.*.1)
 def neighborToRouterIP(neighbor):
     return '.'.join(neighbor.split('.')[:-1] + ["1"])
 
-# convert ip of neighbor to oldrouter (*.*.*.2 to *.*.*.1)
+
+# convert ip of router to neighbor (*.*.*.1 to *.*.*.2)
 def routerToNeighborIP(router):
     return '.'.join(router.split('.')[:-1] + ["2"])
+
 
 # converts an ip to its value by int
 def ipToValue(ip):
     return int(ip.replace('.', ''))
 
-# converts a netmask number (aka how many 1's there are in its binary form) 
-# (IE: 8, 16,24, 32, etc) to its IP representation
-# by first converting it to binary and then calculating the int
-# and then turning it back into IP
-# tbh idk if i did this correctly i havent tested it
+
+# converts a netmask number to its IP representation (Ex: /20 --> 255.255.240.0)
 def netmaskNumToIP(num):
-    full = num/8
-    part = num%8
-    remainder = 4 - (full + 1)
+    full = math.floor(num / 8)
+    part = num % 8
     nmIP = ""
     partIPstr = ""
+    remainder = math.ceil(full - 1)
 
     for f in range(full):
-        nmIP+="255."
+        nmIP += "255."
 
     for p in range(part):
-        partIPstr+="1"
+        partIPstr += "1"
 
-    partIPstr = partIPstr.ljust(8, '0')
+    partIPint = int(partIPstr.ljust(8, '0'), 2)
+    partIP = str(partIPint)
+    nmIP += partIP
 
-    partIPint = int(partIPstr, 2)
-    partIP = str(partIPInt)
-
-    nmIP+=partIP
-
-    if remainder != 0:
+    if remainder < 4:
         for r in range(remainder):
-            nmIP+=".0"
+            nmIP += ".0"
 
     return nmIP
-            
-
-
 
 
 # convert ip address to binary representation of four 8-bit segments
@@ -205,7 +198,7 @@ class Router:
             self.relations[network] = relation
         return
 
-    def remove_entries(self, src,msgs):
+    def remove_entries(self, src, msgs):
         """ Finds messages to be revoked and removes from forwarding table"""
         print("Messages to be removed: ", msgs)
         for msg in msgs:
@@ -373,7 +366,7 @@ class Router:
             nmCounts[nmlen] = entryList
         # find max netmask = maxNM
         maxNM = max(nmCounts.keys())
-        
+
         print("numCounts: ", nmCounts)
         print("Max Netmask: ", maxNM)
         # return nmCounts value of list of routes with maxNM key
@@ -393,7 +386,7 @@ class Router:
             self.sockets[srcif].sendall(datapkgb)
         except socket.error as e:
             print("Socket failed to send: ", e)
-            sys.exit(1)
+            exit(1)
 
     # sends route msg to src of packet
     def send_one_route(self, srcif, packet, route):
@@ -404,7 +397,7 @@ class Router:
             self.sockets[route['peer']].sendall(datapkgb)
         except socket.error as e:
             print("Socket failed to send: ", e)
-            sys.exit(1)
+            exit(1)
 
     # broadcasts messages to respective relation types
     def broadcast(self, announcement, packet):
@@ -460,9 +453,9 @@ class Router:
             dstType = self.relations[dstIP]
             if (srcType != "cust" and dstType != "cust"):
                 self.send_no_route(srcif, packet)
-            else: 
-                self.send_one_route(srcif, packet, route) 
-        elif numRoutes > 1: 
+            else:
+                self.send_one_route(srcif, packet, route)
+        elif numRoutes > 1:
             routes = self.longest_prefix(routes)
             numRoutes = len(routes)
             # Scenario 3: longest prefix
@@ -478,81 +471,79 @@ class Router:
                 # if not, then go to get_route to apply the tie-breaker rules
                 route = self.get_route(srcif, daddr, routes)
                 if not route:
-                   self.send_no_route(srcif, packet)
+                    self.send_no_route(srcif, packet)
                 else:
-                   self.send_one_route(srcif, packet, route)
+                    self.send_one_route(srcif, packet, route)
 
         return False
 
-    # checks if two ASPaths are identical
-    def compare_ASPaths(first, sec):
-        firstlen = len(first)
-        seclen = len(sec)
-
-        if (firstlen != seclen):
-            return False
-        else:
-            for x in range(firstlen):
-                if first[x] != sec[x]:
-                    return False
-        return True
-
     # checks if two entries in the forwarding table can be combined
-    def compare_entries(first, sec):
-        return first['netmask'] == sec['netmask']
-        and first['peer'] == sec['peer'] 
-        and first['localpref'] == sec['localpref'] 
-        and first['origin'] == sec['origin'] 
-        and first['selfOrigin'] == sec['selfOrigin']
-        and compare_ASPaths(first['ASPath'], sec['ASPath'])
-        and is_adjacent(first, sec)
-
-    # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
-    # I probably couldve done this in int form to make it less complicated but i didnt bc im dumb :(
-    def is_adjacent(first, sec):
-        firstnw = first['network']
-        firstnm = first['netmask']
-        firstnmbin = binl(firstnw)
-        secnw = sec['network']
-        secnm = sec['netmask']
-        secnmbin = binl(secnw)
-        nmlen = countNetmask(firstnm)
-        for x in range (nmlen - 1):
-            sec1 = x/4
-            sec2 = x%8
-            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
-                return False
-        return True
+    def compare_entries(self, first, sec):
+        return first['netmask'] == sec['netmask'] and first['peer'] == sec['peer'] and first['localpref'] == sec[
+            'localpref'] and first['origin'] == sec['origin'] and first['selfOrigin'] == sec['selfOrigin'] and first[
+                   'ASPath'] == sec['ASPath'] and self.is_adjacent(first, sec)
 
     # combines 2 entries in the forwarding table
-    def combine_entries(first, sec):
+    def combine_entries(self, first, sec):
         firstnw = ipToValue(first['network'])
         secnw = ipToValue(sec['network'])
         nm = first['netmask']
         nmlen = countNetmask(nm) - 1
 
-        if (firstnw > secnw):
+        if firstnw > secnw:
             forwarding_table.remove(firstnw)
-            secnw['netmask'] = netmaskNumToIP(nmlen)
+            sec['netmask'] = netmaskNumToIP(nmlen)
         else:
             forwarding_table.remove(secnw)
-            firstmw['netmask'] = netmaskNumToIP(nmlen)
+            first['netmask'] = netmaskNumToIP(nmlen)
 
+    # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
+    # Ex: 192.168.0.0/24 and 192.168.1.0/24
+    # I probably couldve done this in int form to make it less complicated but i didnt bc im dumb :(
+    # I'm tired and I can no longer read :(
+    def is_adjacent(self, first, sec):
+        firstnm = first['netmask']
+        secnm = sec['netmask']
 
+        # I am not sure if this is correct (Google didn't tell me :( )
+        if firstnm != secnm:
+            return False
+
+        firstnw = first['network']
+        secnw = sec['network']
+        firstnmbin = binl(firstnw)
+        secnmbin = binl(secnw)
+
+        # i don't understand this right now : )
+        nmlen = countNetmask(firstnm)
+        for x in range(nmlen - 1):
+            sec1 = math.floor(x / 4)
+            sec2 = x % 8
+            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
+                return False
+
+        # hi this is hot and fresh at 1:49am
+        # firstnw = ipToValue(first['network'])
+        # secnw = ipToValue(sec['network'])
+        # return abs(firstnw - secnw) == 1
+
+        return True
 
     def coalesce(self):
         """ coalesce any routes that are right next to each other   """
-        # TODO (this is the most difficult task, save until last)
+        # TODO: :D :D :D
         print("BEFORE AGGREGATION ", forwarding_table)
-        ftlen = len(forwarding_table)
+        # The 2am Strategy (TM)
+        # Sort list by entry['network']
+        sorted_table = sorted(forwarding_table, key=operator.itemgetter('network'))
+        # Check if any adjacent entries are route neighbors, if so, combine
+        for entry1, entry2 in zip(sorted_table, sorted_table[1:]):
+            if self.compare_entries(entry1, entry2):
+                self.combine_entries(entry1, entry2)
 
-        # for f in range(ftlen):
-        #     entry1 = forwarding_table[f]
-        #     for t in range(ftlen):
-        #         if (f != t):
-        #             entry2 = forwarding_table[t]
-        #             if compare_entries(entry1, entry2):
-        #                 combine_entries(entry1, entry2)
+        # Thoughts:
+        # 1. We could store a boolean for "is_combined" so that later when we have to revoke it we don't have to rebuild the entire table?
+        # 2. Or we could just rebuild the table and use the messages array
 
         print("AFTER AGGREGATION ", forwarding_table)
         return False
@@ -565,7 +556,7 @@ class Router:
                  'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath']}
 
         forwarding_table.append(entry)
-        #self.coalesce()
+        # self.coalesce()
         self.updates.append(packet)
         print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
@@ -582,6 +573,8 @@ class Router:
     def revoke(self, packet):
         """ handle revoke packets """
         msg = packet['msg']
+        # Handle disaggregation
+        # Throw away entire forwarding table and rebuild using saved "update" and "revoke" messages
         self.remove_entries(packet['src'], msg)
         print("Revoke message")
         announcement = {"src": "", "dst": "", "type": "revoke",
