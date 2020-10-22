@@ -349,10 +349,10 @@ class Router:
 
     # sends a no route msg to src of packet
     def send_no_route(self, srcif, packet):
-        my_ip = neighborToRouterIP(packet['src'])
+        my_ip = neighborToRouterIP(srcif)
+        print(packet)
         datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
         datapkgb = dictToByte(datapkg)
-        print("NO ROUTE NO ROUTE NO ROUTE NO ROUTE")
         neighbor_ip = routerToNeighborIP(packet['src'])
         try:
             self.sockets[srcif].sendall(datapkgb)
@@ -361,11 +361,10 @@ class Router:
             sys.exit(1)
 
     # sends route msg to src of packet
-    def send_one_route(self, packet, route):
+    def send_one_route(self, srcif, packet, route):
         my_ip = neighborToRouterIP(route['peer'])
         datapkg = {"src": packet['src'], "dst": packet['dst'], "type": "data", "msg": packet['msg']}
         datapkgb = dictToByte(datapkg)
-        print("Sending one route message to peer")
         try:
             self.sockets[route['peer']].sendall(datapkgb)
         except socket.error as e:
@@ -376,6 +375,7 @@ class Router:
     def broadcast(self, announcement, packet):
         srcIP = packet['src']
         srcType = self.relations[srcIP]
+        # if src type is "cust" then broadcast to all neighbors
         if srcType == "cust":
             for n in self.sockets.keys():
                 if n != srcIP:
@@ -391,7 +391,7 @@ class Router:
                     print("Send message to all customers")
         else:
             for r in self.relations.keys():
-                if r != srcIP and (self.relations[r] == "peer" or self.relations[r] == "prov"):
+                if r != srcIP and (self.relations[r] == "cust"):
                     # creates appropriate python address for announcement source
                     dest = neighborToRouterIP(r)
                     # sets the correct values for announcement src, dst, and ancts
@@ -420,7 +420,15 @@ class Router:
         if numRoutes == 1:
             print("Scenario 2")
             route = routes[0]
-            self.send_one_route(packet, route) 
+            srcType = self.relations[srcif]
+            dstIP = route['peer']
+            dstType = self.relations[dstIP]
+            print("SRCTYPE ", srcType)
+            print("DSTTYPE ", dstType)
+            if (srcType != "cust" and dstType != "cust"):
+                self.send_no_route(srcif, packet)
+            else: 
+                self.send_one_route(srcif, packet, route) 
         elif numRoutes > 1: 
             routes = self.longest_prefix(routes)
             numRoutes = len(routes)
@@ -430,7 +438,7 @@ class Router:
                 # if longest prefix returned only one route, make that the route to take
                 print("Routes: ", routes)
                 route = routes[0]
-                self.send_one_route(packet, route)
+                self.send_one_route(srcif, packet, route)
             # Scenario 4: tie breakers
             elif numRoutes > 1:
                 print("Scenario 4")
@@ -439,7 +447,7 @@ class Router:
                 if not route:
                    self.send_no_route(srcif, packet)
                 else:
-                   self.send_one_route(packet, route)
+                   self.send_one_route(srcif, packet, route)
 
         return False
 
