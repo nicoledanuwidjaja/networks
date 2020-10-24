@@ -492,9 +492,22 @@ class Router:
         secnw = ipToValue(sec['network'])
         nm = first['netmask']
         nmlen = countNetmask(nm) - 1
-
+        coveredNetworks = []
         first['isCombined'] = True
         sec['isCombined'] = True
+        # create updated list of what networks this new entry will cover
+        if first['isOriginal'] != True:
+            for entry in first['coveredNetworks']:
+                coveredNetworks.append(entry)
+        else:
+            coveredNetworks.append(first)
+
+        if sec['isOriginal'] != True:
+            for entry in sec['coveredNetworks']:
+                coveredNetworks.append(entry)
+        else:
+            coveredNetworks.append(sec)
+
         # creates new entry of combined entries in forwarding table
         # and sets the combined entries to "is combined"
         if firstnw > secnw:
@@ -502,7 +515,7 @@ class Router:
             #sec['netmask'] = netmaskNumToIP(nmlen)
             entry = {"network": sec['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
                  'localpref': sec['localpref'], 'origin': sec['origin'],
-                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False}
+                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False, 'coveredNetworks':coveredNetworks}
             print("COMBINED ENTRY: ", entry)
             forwarding_table.append(entry)
         else:
@@ -510,7 +523,7 @@ class Router:
             #first['netmask'] = netmaskNumToIP(nmlen)
             entry = {"network": first['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
                  'localpref': sec['localpref'], 'origin': sec['origin'],
-                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False}
+                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False, 'coveredNetworks':coveredNetworks}
             print("COMBINED ENTRY: ", entry)
             forwarding_table.append(entry)            
 
@@ -556,6 +569,32 @@ class Router:
 
         return True
 
+    # find entry in forwarding table that contains
+    # the network that is being revoked
+    # and remove that entry 
+    # and set all networks that are contained in that entry
+    # to have isCombined = false
+    def disaggregate(self, src, msgs):
+        active_table = self.filter_combined()
+        containingEntry = 1
+        disaggregated = []
+        for msg in msgs:
+            for entry in active_table:
+                if entry['isOriginal'] == True:
+                    if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
+                        forwarding_table.remove(entry)
+                    
+                else:
+                    for coveredNetwork in entry['coveredNetworks']:
+                        if msg['network'] == coveredNetwork['network'] and msg['netmask'] == coveredNetwork['netmask'] and src == coveredNetwork['peer']:
+                            containingEntry = entry
+                            disaggregated = containingEntry['coveredNetworks']
+                            forwarding_table.remove(containingEntry)
+                            print("DISAGGREGATED LIST STILL EXISTS? ", disaggregated)
+
+            for entry in disaggregated:
+                entry['isCombined'] = False
+
     def coalesce(self):
         """ coalesce any routes that are right next to each other   """
         # TODO: :D :D :D
@@ -585,7 +624,7 @@ class Router:
         # adds entry to forwarding table (updates)
         entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'],
                  'localpref': packet['msg']['localpref'], 'origin': packet['msg']['origin'],
-                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath'], 'isCombined':False, 'isOriginal':True}
+                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath'], 'isCombined':False, 'isOriginal':True, 'coveredNetworks':[]}
 
         forwarding_table.append(entry)
         runAgain = True
@@ -613,7 +652,15 @@ class Router:
         msg = packet['msg']
         # Handle disaggregation
         # Throw away entire forwarding table and rebuild using saved "update" and "revoke" messages
-        self.remove_entries(packet['src'], msg)
+        self.disaggregate(packet['src'], msg)
+        runAgain = True
+        counter = 0
+        while runAgain:
+            runAgain = self.coalesce()
+            counter +=1
+            print(counter)
+            print(runAgain)
+ 
         print("REVOKEREVOKEREVOKE")
         announcement = {"src": "", "dst": "", "type": "revoke",
                         "msg": msg}
