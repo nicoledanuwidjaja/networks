@@ -558,16 +558,19 @@ class Router:
     # 1. find entry in forwarding table that contains the network that is being revoked and remove that entry
     # 2. set all networks that are contained in that entry to have isCombined = false
     def disaggregate(self, src, msgs):
-        active_table = self.filter_combined()
         containingEntry = None
         disaggregated = []
         for msg in msgs:
+            active_table = self.filter_combined()
+            print("FOR MSG IN MSGS")
             for entry in active_table:
                 # remove original entry if matches with message
                 if entry['isOriginal'] == True:
+                    print("ENTRY IS ORIGINAL")
                     if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
                         forwarding_table.remove(entry)
                 else:
+                    print("ENTRY IS NOT ORIGINAL")
                     for coveredNetwork in entry['coveredNetworks']:
                         if msg['network'] == coveredNetwork['network'] and msg['netmask'] == coveredNetwork['netmask'] \
                                 and src == coveredNetwork['peer']:
@@ -578,6 +581,8 @@ class Router:
 
             for entry in disaggregated:
                 entry['isCombined'] = False
+        print(self.filter_combined())
+
 
     def coalesce(self):
         """ coalesce any routes that are right next to each other   """
