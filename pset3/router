@@ -101,8 +101,8 @@ def binl(ip):
 
 # calculate the combination for network/netmask addresses
 def combine_submask(netmask_ip, dest_ip):
-    # print("OG Netmask: ", netmask_ip)
-    # print("OG Dest: ", dest_ip)
+    #print("OG Netmask: ", netmask_ip)
+    #print("OG Dest: ", dest_ip)
     combined = []
     # separate bits into four groups of 8-bits
     for b in range(4):
@@ -112,7 +112,7 @@ def combine_submask(netmask_ip, dest_ip):
             finpart += str(int(netmask_ip[b][s]) & int(dest_ip[b][s]))
         # print("Part: ", finpart)
         combined.append(finpart)
-    # print("Combined: ", combined)
+    #print("Combined: ", combined)
     return combined
 
 
@@ -462,7 +462,7 @@ class Router:
             if numRoutes == 1:
                 print("Scenario 3")
                 # if longest prefix returned only one route, make that the route to take
-                print("Routes: ", routes)
+                #print("Routes: ", routes)
                 route = routes[0]
                 self.send_one_route(srcif, packet, route)
             # Scenario 4: tie breakers
@@ -485,42 +485,69 @@ class Router:
 
     # combines 2 entries in the forwarding table
     def combine_entries(self, first, sec):
+        print("COMBINING ENTRIES: ")
+        print(first)
+        print(sec)
         firstnw = ipToValue(first['network'])
         secnw = ipToValue(sec['network'])
         nm = first['netmask']
         nmlen = countNetmask(nm) - 1
 
+        first['isCombined'] = True
+        sec['isCombined'] = True
+        # creates new entry of combined entries in forwarding table
+        # and sets the combined entries to "is combined"
         if firstnw > secnw:
-            forwarding_table.remove(firstnw)
-            sec['netmask'] = netmaskNumToIP(nmlen)
+            #forwarding_table.remove(firstnw)
+            #sec['netmask'] = netmaskNumToIP(nmlen)
+            entry = {"network": sec['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
+                 'localpref': sec['localpref'], 'origin': sec['origin'],
+                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False}
+            print("COMBINED ENTRY: ", entry)
+            forwarding_table.append(entry)
         else:
-            forwarding_table.remove(secnw)
-            first['netmask'] = netmaskNumToIP(nmlen)
+            #forwarding_table.remove(secnw)
+            #first['netmask'] = netmaskNumToIP(nmlen)
+            entry = {"network": first['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
+                 'localpref': sec['localpref'], 'origin': sec['origin'],
+                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False}
+            print("COMBINED ENTRY: ", entry)
+            forwarding_table.append(entry)            
 
     # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
     # Ex: 192.168.0.0/24 and 192.168.1.0/24
+    # basically i think we can check if they're adjacent by 
+    # first checking if they have identical length of netmask
+    # then masking the networks with the length of the netmask - 1
+    # and then compare the masked networks to see if they are identical
+    # if they are then they can be combined??
     # I probably couldve done this in int form to make it less complicated but i didnt bc im dumb :(
     # I'm tired and I can no longer read :(
     def is_adjacent(self, first, sec):
         firstnm = first['netmask']
         secnm = sec['netmask']
 
+        # checking for identical length of netmask
         # I am not sure if this is correct (Google didn't tell me :( )
         if firstnm != secnm:
             return False
 
-        firstnw = first['network']
-        secnw = sec['network']
-        firstnmbin = binl(firstnw)
-        secnmbin = binl(secnw)
-
+        # masking the networks with the length of the netmask - 1        
+        newNetmaskLength = countNetmask(first['netmask']) - 1
+        newNetmaskIP = netmaskNumToIP(newNetmaskLength)
+        newNetmaskBinl = binl(newNetmaskIP)
+        # compare the masked networks to see if they are identical
+        if (combine_submask(binl(first['network']), newNetmaskBinl) == combine_submask(binl(sec['network']), newNetmaskBinl)):
+            return True
+        else:
+            return False
         # i don't understand this right now : )
-        nmlen = countNetmask(firstnm)
-        for x in range(nmlen - 1):
-            sec1 = math.floor(x / 4)
-            sec2 = x % 8
-            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
-                return False
+#        nmlen = countNetmask(firstnm)
+#        for x in range(nmlen - 1):
+#            sec1 = math.floor(x / 4)
+#            sec2 = x % 8
+#            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
+#                return False
 
         # hi this is hot and fresh at 1:49am
         # firstnw = ipToValue(first['network'])
@@ -532,31 +559,36 @@ class Router:
     def coalesce(self):
         """ coalesce any routes that are right next to each other   """
         # TODO: :D :D :D
-        print("BEFORE AGGREGATION ", forwarding_table)
+        #print("BEFORE AGGREGATION ", forwarding_table)
         # The 2am Strategy (TM)
         # Sort list by entry['network']
+        runAgain = False
         sorted_table = sorted(forwarding_table, key=operator.itemgetter('network'))
         # Check if any adjacent entries are route neighbors, if so, combine
         for entry1, entry2 in zip(sorted_table, sorted_table[1:]):
             if self.compare_entries(entry1, entry2):
+                runAgain = True
                 self.combine_entries(entry1, entry2)
 
         # Thoughts:
         # 1. We could store a boolean for "is_combined" so that later when we have to revoke it we don't have to rebuild the entire table?
         # 2. Or we could just rebuild the table and use the messages array
 
-        print("AFTER AGGREGATION ", forwarding_table)
-        return False
+        #print("AFTER AGGREGATION ", forwarding_table)
+        return runAgain
+
 
     def update(self, srcif, packet):
         """ handle update packets   """
         # adds entry to forwarding table (updates)
         entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'],
                  'localpref': packet['msg']['localpref'], 'origin': packet['msg']['origin'],
-                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath']}
+                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath'], 'isCombined':False, 'isOriginal':True}
 
         forwarding_table.append(entry)
-        # self.coalesce()
+        runAgain = True
+        while runAgain:
+            runAgain = self.coalesce()
         self.updates.append(packet)
         print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
@@ -582,10 +614,19 @@ class Router:
         self.broadcast(announcement, packet)
         return True
 
+    def filter_combined(self):
+        dump_table = []
+        for entry in forwarding_table:
+            # ik this is dumb but not function isnt wokring for me :(
+            if (entry['isCombined'] != True):
+                dump_table.append(entry)
+        return dump_table
+
     def dump(self, packet):
         """ handles dump table requests """
         print("DUMPING")
-        dumppkg = {'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': forwarding_table}
+        dump_table = self.filter_combined()
+        dumppkg = {'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': dump_table}
         dumppkgb = dictToByte(dumppkg)
         print("Incoming packet from: ", packet['src'])
         print("Forwarding Table: ", forwarding_table)
