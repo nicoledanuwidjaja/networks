@@ -200,12 +200,12 @@ class Router:
 
     def remove_entries(self, src, msgs):
         """ Finds messages to be revoked and removes from forwarding table"""
-        print("Messages to be removed: ", msgs)
+#        print("Messages to be removed: ", msgs)
         for msg in msgs:
             for entry in forwarding_table:
                 if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
                     forwarding_table.remove(entry)
-                    print("Removed entry: ", entry)
+#                    print("Removed entry: ", entry)
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
@@ -240,14 +240,14 @@ class Router:
         prefRoutes = []
         for entry in routes:
             localPref = entry['localpref']
-            print("LOCALPREF ", localPref)
+#            print("LOCALPREF ", localPref)
             prefRoutes.append(localPref)
         highestPref = max(prefRoutes)
         for entry in routes:
             localpref = entry['localpref']
             if localpref == highestPref:
                 outroutes.append(entry)
-        print("HIGHEST PREF: ", outroutes)
+#        print("HIGHEST PREF: ", outroutes)
         return outroutes
 
     def get_self_origin(self, routes):
@@ -256,7 +256,7 @@ class Router:
         for entry in routes:
             origin = entry['selfOrigin']
             if origin:
-                print("SELFORIGIN IS TRUE ", entry)
+#                print("SELFORIGIN IS TRUE ", entry)
                 outroutes.append(entry)
         if not outroutes:
             return routes
@@ -298,11 +298,11 @@ class Router:
             iplist[entry['peer']] = entry
 
         for r in iplist.keys():
-            print("IP: ", r)
+            #print("IP: ", r)
             ipnum = ipToValue(r)
             ipvlist[ipnum] = iplist[r]
 
-        print("IP Num List: ", ipvlist)
+        #print("IP Num List: ", ipvlist)
         minipv = min(ipvlist.keys())
 
         for m in ipvlist.keys():
@@ -342,7 +342,7 @@ class Router:
             # Final check: enforce peering relationships
             print("Final route check")
             routes = self.filter_relationships(srcif, routes)
-        print("Best route: ", routes[0])
+        #print("Best route: ", routes[0])
 
         # return the peer to send the msg through, else return nothing
         if len(routes) == 0:
@@ -357,7 +357,7 @@ class Router:
         # {netmask length : list of forwarding table entries with matching length}
         nmCounts = {}
         for entry in routes:
-            print("Entry: ", entry)
+            #print("Entry: ", entry)
             nmlen = countNetmask(entry['netmask'])
             entryList = []
             if nmlen in nmCounts.keys():
@@ -367,8 +367,8 @@ class Router:
         # find max netmask = maxNM
         maxNM = max(nmCounts.keys())
 
-        print("numCounts: ", nmCounts)
-        print("Max Netmask: ", maxNM)
+        #print("numCounts: ", nmCounts)
+        #print("Max Netmask: ", maxNM)
         # return nmCounts value of list of routes with maxNM key
         for nm in nmCounts:
             if nm == maxNM:
@@ -378,14 +378,14 @@ class Router:
     # sends a no route msg to src of packet
     def send_no_route(self, srcif, packet):
         my_ip = neighborToRouterIP(srcif)
-        print(packet)
+        #print(packet)
         datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
         datapkgb = dictToByte(datapkg)
         neighbor_ip = routerToNeighborIP(packet['src'])
         try:
             self.sockets[srcif].sendall(datapkgb)
         except socket.error as e:
-            print("Socket failed to send: ", e)
+            #print("Socket failed to send: ", e)
             exit(1)
 
     # sends route msg to src of packet
@@ -396,7 +396,7 @@ class Router:
         try:
             self.sockets[route['peer']].sendall(datapkgb)
         except socket.error as e:
-            print("Socket failed to send: ", e)
+            #print("Socket failed to send: ", e)
             exit(1)
 
     # broadcasts messages to respective relation types
@@ -563,13 +563,15 @@ class Router:
         # The 2am Strategy (TM)
         # Sort list by entry['network']
         runAgain = False
-        sorted_table = sorted(forwarding_table, key=operator.itemgetter('network'))
+        active_table = self.filter_combined()
+        sorted_table = sorted(active_table, key=operator.itemgetter('network'))
         # Check if any adjacent entries are route neighbors, if so, combine
         for entry1, entry2 in zip(sorted_table, sorted_table[1:]):
             if self.compare_entries(entry1, entry2):
                 runAgain = True
                 self.combine_entries(entry1, entry2)
-
+        dump_table = self.filter_combined()
+        print("COALESCED TABLE: ", dump_table)
         # Thoughts:
         # 1. We could store a boolean for "is_combined" so that later when we have to revoke it we don't have to rebuild the entire table?
         # 2. Or we could just rebuild the table and use the messages array
@@ -587,8 +589,12 @@ class Router:
 
         forwarding_table.append(entry)
         runAgain = True
+        counter = 0
         while runAgain:
             runAgain = self.coalesce()
+            counter +=1
+            print(counter)
+            print(runAgain)
         self.updates.append(packet)
         print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
@@ -608,7 +614,7 @@ class Router:
         # Handle disaggregation
         # Throw away entire forwarding table and rebuild using saved "update" and "revoke" messages
         self.remove_entries(packet['src'], msg)
-        print("Revoke message")
+        print("REVOKEREVOKEREVOKE")
         announcement = {"src": "", "dst": "", "type": "revoke",
                         "msg": msg}
         self.broadcast(announcement, packet)
@@ -629,7 +635,7 @@ class Router:
         dumppkg = {'src': packet['dst'], 'dst': packet['src'], 'type': 'table', 'msg': dump_table}
         dumppkgb = dictToByte(dumppkg)
         print("Incoming packet from: ", packet['src'])
-        print("Forwarding Table: ", forwarding_table)
+        print("Forwarding Table: ", dump_table)
         self.sockets[packet['src']].sendall(dumppkgb)
         return True
 
