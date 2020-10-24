@@ -101,8 +101,8 @@ def binl(ip):
 
 # calculate the combination for network/netmask addresses
 def combine_submask(netmask_ip, dest_ip):
-    #print("OG Netmask: ", netmask_ip)
-    #print("OG Dest: ", dest_ip)
+    # print("OG Netmask: ", netmask_ip)
+    # print("OG Dest: ", dest_ip)
     combined = []
     # separate bits into four groups of 8-bits
     for b in range(4):
@@ -112,7 +112,7 @@ def combine_submask(netmask_ip, dest_ip):
             finpart += str(int(netmask_ip[b][s]) & int(dest_ip[b][s]))
         # print("Part: ", finpart)
         combined.append(finpart)
-    #print("Combined: ", combined)
+    # print("Combined: ", combined)
     return combined
 
 
@@ -200,12 +200,13 @@ class Router:
 
     def remove_entries(self, src, msgs):
         """ Finds messages to be revoked and removes from forwarding table"""
-#        print("Messages to be removed: ", msgs)
+        #        print("Messages to be removed: ", msgs)
         for msg in msgs:
             for entry in forwarding_table:
                 if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
                     forwarding_table.remove(entry)
-#                    print("Removed entry: ", entry)
+
+    #                    print("Removed entry: ", entry)
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
@@ -240,14 +241,14 @@ class Router:
         prefRoutes = []
         for entry in routes:
             localPref = entry['localpref']
-#            print("LOCALPREF ", localPref)
+            #            print("LOCALPREF ", localPref)
             prefRoutes.append(localPref)
         highestPref = max(prefRoutes)
         for entry in routes:
             localpref = entry['localpref']
             if localpref == highestPref:
                 outroutes.append(entry)
-#        print("HIGHEST PREF: ", outroutes)
+        #        print("HIGHEST PREF: ", outroutes)
         return outroutes
 
     def get_self_origin(self, routes):
@@ -256,7 +257,7 @@ class Router:
         for entry in routes:
             origin = entry['selfOrigin']
             if origin:
-#                print("SELFORIGIN IS TRUE ", entry)
+                #                print("SELFORIGIN IS TRUE ", entry)
                 outroutes.append(entry)
         if not outroutes:
             return routes
@@ -298,11 +299,11 @@ class Router:
             iplist[entry['peer']] = entry
 
         for r in iplist.keys():
-            #print("IP: ", r)
+            # print("IP: ", r)
             ipnum = ipToValue(r)
             ipvlist[ipnum] = iplist[r]
 
-        #print("IP Num List: ", ipvlist)
+        # print("IP Num List: ", ipvlist)
         minipv = min(ipvlist.keys())
 
         for m in ipvlist.keys():
@@ -342,7 +343,7 @@ class Router:
             # Final check: enforce peering relationships
             #print("Final route check")
             routes = self.filter_relationships(srcif, routes)
-        #print("Best route: ", routes[0])
+        # print("Best route: ", routes[0])
 
         # return the peer to send the msg through, else return nothing
         if len(routes) == 0:
@@ -357,7 +358,7 @@ class Router:
         # {netmask length : list of forwarding table entries with matching length}
         nmCounts = {}
         for entry in routes:
-            #print("Entry: ", entry)
+            # print("Entry: ", entry)
             nmlen = countNetmask(entry['netmask'])
             entryList = []
             if nmlen in nmCounts.keys():
@@ -367,8 +368,8 @@ class Router:
         # find max netmask = maxNM
         maxNM = max(nmCounts.keys())
 
-        #print("numCounts: ", nmCounts)
-        #print("Max Netmask: ", maxNM)
+        # print("numCounts: ", nmCounts)
+        # print("Max Netmask: ", maxNM)
         # return nmCounts value of list of routes with maxNM key
         for nm in nmCounts:
             if nm == maxNM:
@@ -378,14 +379,14 @@ class Router:
     # sends a no route msg to src of packet
     def send_no_route(self, srcif, packet):
         my_ip = neighborToRouterIP(srcif)
-        #print(packet)
+        # print(packet)
         datapkg = {"src": my_ip, "dst": packet['src'], "type": "no route", "msg": {}}
         datapkgb = dictToByte(datapkg)
         neighbor_ip = routerToNeighborIP(packet['src'])
         try:
             self.sockets[srcif].sendall(datapkgb)
         except socket.error as e:
-            #print("Socket failed to send: ", e)
+            # print("Socket failed to send: ", e)
             exit(1)
 
     # sends route msg to src of packet
@@ -396,7 +397,7 @@ class Router:
         try:
             self.sockets[route['peer']].sendall(datapkgb)
         except socket.error as e:
-            #print("Socket failed to send: ", e)
+            # print("Socket failed to send: ", e)
             exit(1)
 
     # broadcasts messages to respective relation types
@@ -462,7 +463,7 @@ class Router:
             if numRoutes == 1:
                 #print("Scenario 3")
                 # if longest prefix returned only one route, make that the route to take
-                #print("Routes: ", routes)
+                # print("Routes: ", routes)
                 route = routes[0]
                 self.send_one_route(srcif, packet, route)
             # Scenario 4: tie breakers
@@ -511,31 +512,31 @@ class Router:
         # creates new entry of combined entries in forwarding table
         # and sets the combined entries to "is combined"
         if firstnw > secnw:
-            #forwarding_table.remove(firstnw)
-            #sec['netmask'] = netmaskNumToIP(nmlen)
+            # forwarding_table.remove(firstnw)
+            # sec['netmask'] = netmaskNumToIP(nmlen)
             entry = {"network": sec['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
-                 'localpref': sec['localpref'], 'origin': sec['origin'],
-                 'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False, 'coveredNetworks':coveredNetworks}
-            #print("COMBINED ENTRY: ", entry)
+                    'localpref': sec['localpref'], 'origin': sec['origin'],
+                     'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False,
+                     'coveredNetworks': coveredNetworks}
+            print("COMBINED ENTRY: ", entry)
             forwarding_table.append(entry)
         else:
-            #forwarding_table.remove(secnw)
-            #first['netmask'] = netmaskNumToIP(nmlen)
-            entry = {"network": first['network'], "netmask": netmaskNumToIP(nmlen), "peer": first['peer'],
-                 'localpref': first['localpref'], 'origin': first['origin'],
-                 'selfOrigin': first['selfOrigin'], 'ASPath': first['ASPath'], 'isCombined': False, 'isOriginal': False, 'coveredNetworks':coveredNetworks}
-            #print("COMBINED ENTRY: ", entry)
-            forwarding_table.append(entry)            
+            # forwarding_table.remove(secnw)
+            # first['netmask'] = netmaskNumToIP(nmlen)
+            entry = {"network": first['network'], "netmask": netmaskNumToIP(nmlen), "peer": sec['peer'],
+                     'localpref': sec['localpref'], 'origin': sec['origin'],
+                     'selfOrigin': sec['selfOrigin'], 'ASPath': sec['ASPath'], 'isCombined': False, 'isOriginal': False,
+                     'coveredNetworks': coveredNetworks}
+            print("COMBINED ENTRY: ", entry)
+            forwarding_table.append(entry)
 
-    # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
+            # checks if two entries in the forwarding table are "adjacent" based on their network + length of netmask
+
     # Ex: 192.168.0.0/24 and 192.168.1.0/24
     # basically i think we can check if they're adjacent by 
     # first checking if they have identical length of netmask
     # then masking the networks with the length of the netmask - 1
     # and then compare the masked networks to see if they are identical
-    # if they are then they can be combined??
-    # I probably couldve done this in int form to make it less complicated but i didnt bc im dumb :(
-    # I'm tired and I can no longer read :(
     def is_adjacent(self, first, sec):
         firstnm = first['netmask']
         secnm = sec['netmask']
@@ -550,30 +551,12 @@ class Router:
         newNetmaskIP = netmaskNumToIP(newNetmaskLength)
         newNetmaskBinl = binl(newNetmaskIP)
         # compare the masked networks to see if they are identical
-        if (combine_submask(binl(first['network']), newNetmaskBinl) == combine_submask(binl(sec['network']), newNetmaskBinl)):
-            return True
-        else:
-            return False
-        # i don't understand this right now : )
-#        nmlen = countNetmask(firstnm)
-#        for x in range(nmlen - 1):
-#            sec1 = math.floor(x / 4)
-#            sec2 = x % 8
-#            if firstnmbin[sec1][sec2] != secnmbin[sec1][sec2]:
-#                return False
+        firstMask = combine_submask(binl(first['network']), newNetmaskBinl)
+        secMask = combine_submask(binl(sec['network']), newNetmaskBinl)
+        return  firstMask == secMask
 
-        # hi this is hot and fresh at 1:49am
-        # firstnw = ipToValue(first['network'])
-        # secnw = ipToValue(sec['network'])
-        # return abs(firstnw - secnw) == 1
-
-        return True
-
-    # find entry in forwarding table that contains
-    # the network that is being revoked
-    # and remove that entry 
-    # and set all networks that are contained in that entry
-    # to have isCombined = false
+    # 1. find entry in forwarding table that contains the network that is being revoked and remove that entry
+    # 2. set all networks that are contained in that entry to have isCombined = false
     def disaggregate(self, src, msgs):
         containingEntry = None
         disaggregated = []
@@ -582,6 +565,7 @@ class Router:
             #print("FOR MSG IN MSGS")
             #print(active_table)
             for entry in active_table:
+                # remove original entry if matches with message
                 if entry['isOriginal'] == True:
                     #print("ENTRY IS ORIGINAL")
                     if msg['network'] == entry['network'] and msg['netmask'] == entry['netmask'] and src == entry['peer']:
@@ -589,7 +573,8 @@ class Router:
                 else:
                     #print("ENTRY IS NOT ORIGINAL")
                     for coveredNetwork in entry['coveredNetworks']:
-                        if msg['network'] == coveredNetwork['network'] and msg['netmask'] == coveredNetwork['netmask'] and src == coveredNetwork['peer']:
+                        if msg['network'] == coveredNetwork['network'] and msg['netmask'] == coveredNetwork['netmask'] \
+                                and src == coveredNetwork['peer']:
                             containingEntry = entry
                             #print("CONTAINING ENTRY: ", containingEntry)
                             disaggregated = containingEntry['coveredNetworks']
@@ -605,8 +590,7 @@ class Router:
 
     def coalesce(self):
         """ coalesce any routes that are right next to each other   """
-        # TODO: :D :D :D
-        #print("BEFORE AGGREGATION ", forwarding_table)
+        # print("BEFORE AGGREGATION ", forwarding_table)
         # The 2am Strategy (TM)
         # Sort list by entry['network']
         runAgain = False
@@ -618,28 +602,27 @@ class Router:
                 runAgain = True
                 self.combine_entries(entry1, entry2)
         dump_table = self.filter_combined()
-        #print("COALESCED TABLE: ", dump_table)
+        # print("COALESCED TABLE: ", dump_table)
         # Thoughts:
         # 1. We could store a boolean for "is_combined" so that later when we have to revoke it we don't have to rebuild the entire table?
         # 2. Or we could just rebuild the table and use the messages array
 
-        #print("AFTER AGGREGATION ", forwarding_table)
+        # print("AFTER AGGREGATION ", forwarding_table)
         return runAgain
-
 
     def update(self, srcif, packet):
         """ handle update packets   """
         # adds entry to forwarding table (updates)
         entry = {"network": packet['msg']['network'], "netmask": packet['msg']['netmask'], "peer": packet['src'],
                  'localpref': packet['msg']['localpref'], 'origin': packet['msg']['origin'],
-                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath'], 'isCombined':False, 'isOriginal':True, 'coveredNetworks':[]}
+                 'selfOrigin': packet['msg']['selfOrigin'], 'ASPath': packet['msg']['ASPath'], 'isCombined': False,
+                 'isOriginal': True, 'coveredNetworks': []}
 
         forwarding_table.append(entry)
         runAgain = True
         counter = 0
         while runAgain:
             runAgain = self.coalesce()
-            counter +=1
         self.updates.append(packet)
         #print("Update forwarding table with new packet")
         announcement = {"src": "", "dst": "", "type": "update",
@@ -663,26 +646,22 @@ class Router:
         counter = 0
         while runAgain:
             runAgain = self.coalesce()
-            counter +=1
- 
-        #print("REVOKEREVOKEREVOKE")
-        active_list = self.filter_combined()
-        #print("printing remainder after disaggregation + colescion")
-        #for entry in active_list:
-            #print(entry['network'])
-        #print("PRINTING FORWARDING TABLE REMAINDER")
-        #for entry in forwarding_table:
-            #print(entry['network'], countNetmask(entry['netmask']), entry['isCombined'])
+            counter += 1
+            print(counter)
+            print(runAgain)
+
+        print("REVOKEREVOKEREVOKE")
         announcement = {"src": "", "dst": "", "type": "revoke",
                         "msg": msg}
         self.broadcast(announcement, packet)
         return True
 
     def filter_combined(self):
+        """ Filters out all combined entries """
         dump_table = []
         for entry in forwarding_table:
             # ik this is dumb but not function isnt wokring for me :(
-            if (entry['isCombined'] != True):
+            if entry['isCombined'] != True:
                 dump_table.append(entry)
         return dump_table
 
@@ -696,16 +675,6 @@ class Router:
         #print("Forwarding Table: ", dump_table)
         self.sockets[packet['src']].sendall(dumppkgb)
         return True
-
-    def handle_packet(self, srcif, packet):
-        """ dispatches a packet """
-        # TODO
-        return False
-
-    def send_error(self, conn, msg):
-        """ Send a no_route error message """
-        # TODO
-        return
 
     def run(self):
         while True:
@@ -731,13 +700,8 @@ class Router:
                         self.dump(msg)
                     if message['type'] == 'revoke':
                         self.revoke(msg)
-                    # TODO: wtf is this :(
-                    if not self.handle_packet(srcif, msg):
-                        self.send_error(conn, msg)
                 else:
                     return
-                # print(messages)
-
 
 if __name__ == "__main__":
     router = Router(args.networks)
