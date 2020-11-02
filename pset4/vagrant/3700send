@@ -1,9 +1,5 @@
 #!/usr/bin/python -u
-#
-# CS3700, Spring 2015
-# Project 2 Starter Code
-#
-
+# Usage: ./3700send <recv_host>:<recv_port>
 import sys
 import socket
 import time
@@ -27,17 +23,38 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
+
+# Fragmentation
+def send_fragment(data):
+  # while not end of file
+  log('DATA LENGTH ' + str(len(data)))
+  # while len(data) > DATA_SIZE:
+  #   log("DATA LENGTH GREATER THAN DATA SIZE")
+  msg = json.dumps({"sequence": SEQUENCE, "data": data[:DATA_SIZE], "ack": False, "eof": False})
+  sock.sendto(msg.encode(), dest)
+  #log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
+  data = data[DATA_SIZE:]
+  return data
+  # else:
+  #   return data
+
+  # while '' not in msg:
+  #   sock.sendto(msg, dest)
+  #   msg += sock.sendto(8196).decode()
 
 def send_next_packet():
   global SEQUENCE
 
   data = sys.stdin.read(DATA_SIZE)
   if (len(data) > 0):
-    msg = json.dumps({"sequence": SEQUENCE, "data": data, "ack": False, "eof": False})
-    SEQUENCE += len(data)
-
-    if sock.sendto(msg, dest) < len(msg):
+    log(str(type(data)))
+    djson = data.encode()
+    log("[DATA]" + djson)
+    msg = json.dumps({"sequence": SEQUENCE, "data": data, "ack": False, "eof": True})
+    log("Sequence " + str(SEQUENCE))
+    # checks if the current message size is the same
+    if sock.sendto(msg.encode(), dest) < len(msg):
       log("[error] unable to fully send packet")
     else:
       log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
@@ -52,7 +69,6 @@ send_next_packet()
 while True:
   log("ABOUT TO SLEEP")
   result = sock.recvfrom(MSG_SIZE)
-
   if result:
     (data, addr) = result
     try:

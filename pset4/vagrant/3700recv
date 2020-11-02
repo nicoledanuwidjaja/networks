@@ -1,9 +1,5 @@
 #!/usr/bin/python -u
-#
-# CS3700, Spring 2015
-# Project 2 Starter Code
-#
-
+# Usage: ./3700recv <recv_port>
 import sys
 import socket
 import time
@@ -11,15 +7,15 @@ import datetime
 import select
 import json
 
-def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
-
 MSG_SIZE = 1500
 TIMEOUT = 30
 
+def log(string):
+  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
+
 # Bind to localhost and an ephemeral port
 UDP_IP = "127.0.0.1"
-UDP_PORT = 0
+UDP_PORT = int(sys.argv[1])
 
 # Set up the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
@@ -27,17 +23,20 @@ sock.bind((UDP_IP, UDP_PORT))
 sock.settimeout(TIMEOUT)
 
 # Get port we bound to
-UDP_PORT = sock.getsockname()[1]
+# UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
 
 # Now listen for packets
 while True:
+  log("Listening...")
   result = sock.recvfrom(MSG_SIZE)
+  # log("RESULT" + result[0])
+  # log(str(type(result[0])))
 
   # If nothing is ready, we hit the timeout
   if result:
     (data, addr) = result
-
+    # log("[DATA] " + data)
     try:
       decoded = json.loads(data)
 
@@ -49,7 +48,7 @@ while True:
       # If there is data, we accept it and print it out
       if (decoded['data']):
         # If we receive data, we assume it's in-order
-        # You will need to do much more here
+        # TODO
         log("[recv data] " + str(decoded['sequence']) + " (" + str(len(decoded['data'])) + ") ACCEPTED (in-order)")
         sys.stdout.write(decoded['data'])
 
