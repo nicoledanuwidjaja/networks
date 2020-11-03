@@ -16,125 +16,69 @@ SEQUENCE = 0
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
 UDP_IP = IP_PORT[0:IP_PORT.find(":")]
-UDP_PORT = int(IP_PORT[IP_PORT.find(":")+1:])
+UDP_PORT = int(IP_PORT[IP_PORT.find(":") + 1:])
 dest = (UDP_IP, UDP_PORT)
 
 # Set up the socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
+
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
+    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
 
-# Fragmentation
-def send_fragment(data):
-  # while not end of file
-  log('DATA LENGTH ' + str(len(data)))
-  # while len(data) > DATA_SIZE:
-  #   log("DATA LENGTH GREATER THAN DATA SIZE")
-  msg = json.dumps({"sequence": SEQUENCE, "data": data[:DATA_SIZE], "ack": False, "eof": False})
-  sock.sendto(msg.encode(), dest)
-  #log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
-  data = data[DATA_SIZE:]
-  return data
-  # else:
-  #   return data
-
-  # while '' not in msg:
-  #   sock.sendto(msg, dest)
-  #   msg += sock.sendto(8196).decode()
 
 def send_next_packet():
-  global SEQUENCE
+    global SEQUENCE
 
-  data = sys.stdin.buffer.read(DATA_SIZE)
-  # log("BUFFER: " + str(data.decode("UTF-8")))
-  if len(data) > 0:
-    #log(str(type(data)))
-    #djson = data.encode()
-    #log("[DATA]" + djson)
-    # datastr = data.decode('utf-8')
-    # log('DATASTR ' + datastr)
-    # log("ENCODED" + datab)
-    # msgarray = bytearray(b'{"sequence": ')
-    # msgarray.extend(bytes(SEQUENCE))
-    # msgarray.extend(b', "data": ')
-    # msgarray.extend(bytes(data))
-    # msgarray.extend(b', "ack": ')
-    # msgarray.extend(False)
-    # msgarray.extend(b', "eof": ')
-    # msgarray.extend(True)
-    # msgarray.extend(b'}')
-    # msg = {"sequence": str(SEQUENCE), "data": datastr, "ack": str(False), "eof": str(True)}
-    # msg = [("sequence", SEQUENCE), ("data", data), ("ack", False), ("eof", True)]
-    # msg = [["sequence", SEQUENCE], ["data", data], ["ack", False], ["eof", True]]
-    # msg = ["sequence", SEQUENCE, "data", data,"ack", False, "eof", True]
+    data = sys.stdin.buffer.read(DATA_SIZE)
 
-    # msgarray = bytearray(msg)''
-    byte_msg = []
+    if len(data) > 0:
+        # create struct for passing packet header data (16 bytes)
+        header_format = (SEQUENCE, 0, False, False)
+        header_struct = struct.Struct('I I I I')
+        header = header_struct.pack(*header_format)
 
-    format = (SEQUENCE, 0, False, False)
-    # s = struct.Struct('IIII')
-    header = struct.pack('IIII', *format)
-    msg = bytearray()
-    msg.extend(header)
-    msg.extend(data)
+        msg = bytearray()
+        msg.extend(header)
+        log("HEADER: " + str(header))
+        msg.extend(data)
+        log("MESSAGE: " + str(msg))
 
-
-
-    # for k, v in msg.items():
-    #   byte_msg[k.encode()] = v.encode()
-
-    # create a struct for the header
-    # NO ENCODING OR DECODING
-    # header = struct.pack(format, 1, 2, 3, 4)
-    # b = bytearray()
-    # b.extend(header)
-    # b.extend(data)
-
-
-    # log("BYTE MSG DATA: " + byte_msg[('data').encode()])
-    byte_msg = '{\"sequence\": SEQUENCE, \"data\": data, \"ack\": False, \"eof\": True}'.encode()
-
-
-    # byte_msg = bytearray(fake)
-    encodedmsg = str(msg).encode('utf-8')
-    #log("IN BYTE FORM: " + msgarray)
-    #log("IN JSON FORM: " + json.dumps(data))
-    #log("Sequence " + str(SEQUENCE))
-    # checks if the current message size is the same
-    if sock.sendto(msg, dest) < len(msg):
-      log("[error] unable to fully send packet")
+        # checks if the current message size is the same
+        if sock.sendto(msg, dest) < len(msg):
+            log("[error] unable to fully send packet")
+        else:
+            log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
+        return True
     else:
-      log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
-    return True
-  else:
-    return False
+        return False
+
 
 # Send first packet
 send_next_packet()
 
 # Now read in data, send packets
 while True:
-  log("ABOUT TO SLEEP")
-  result = sock.recvfrom(MSG_SIZE)
-  if result:
-    (data, addr) = result
-    try:
-      decoded = json.loads(data)
+    log("ABOUT TO SLEEP")
+    result = sock.recvfrom(MSG_SIZE)
+    if result:
+        (data, addr) = result
+        try:
+            decoded = json.loads(data)
 
-      # If there is an ack, send next packet
-      if decoded['ack'] == SEQUENCE:
-        log("[recv ack] " + str(SEQUENCE))
+            # If there is an ack, send next packet
+            if decoded['ack'] == SEQUENCE:
+                log("[recv ack] " + str(SEQUENCE))
 
-        # Try to send next packet; break if no more data
-        if (not send_next_packet()):
-          break
-    except (ValueError, KeyError, TypeError):
-      log("[recv corrupt packet]")
-  else:
-    log("[error] timeout")
-    sys.exit(-1)
+                # Try to send next packet; break if no more data
+                if (not send_next_packet()):
+                    break
+        except (ValueError, KeyError, TypeError):
+            log("[recv corrupt packet]")
+    else:
+        log("[error] timeout")
+        sys.exit(-1)
 
 sock.sendto(json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}), dest)
 sys.exit(0)

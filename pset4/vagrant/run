@@ -1,0 +1,6 @@
+#!/bin/bash
+# run 'chmod -R 777 run' to enable permissions
+vagrant up
+vagrant ssh
+cd ../../vagrant
+nettest --live

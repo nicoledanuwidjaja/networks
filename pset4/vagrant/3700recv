@@ -11,84 +11,74 @@ import struct
 MSG_SIZE = 1500
 TIMEOUT = 30
 
+
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
+    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
+
 
 # Bind to localhost and an ephemeral port
 UDP_IP = "127.0.0.1"
 UDP_PORT = int(sys.argv[1])
 
 # Set up the socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 sock.settimeout(TIMEOUT)
 
-# Get port we bound to
-# UDP_PORT = sock.getsockname()[1]
+# Get port we bound to UDP_PORT = sock.getsockname()[1]
 log("[bound] " + str(UDP_PORT))
 
 # Now listen for packets
 while True:
-  log("Listening...")
-  result = sock.recvfrom(MSG_SIZE)
-  # log("RESULT" + result[0])
-  # log(str(type(result[0])))
+    log("Listening...")
+    result = sock.recvfrom(MSG_SIZE)
 
-  # unpacking everything:
-  # recv - bytes object
-  # header = msg[:HEADER_SIZE]
-  # (a, b, c, d) = struct.unpack(format, header)
-  # data = msg[HEADER_SIZE:]
+    # If nothing is ready, we hit the timeout
+    if result:
+        (packet, addr) = result
 
-  # If nothing is ready, we hit the timeout
-  if result:
+        # create struct for receiving packet header data (16 bytes)
+        header_struct = struct.Struct('I I I I')
+        header = packet[:16]
+        log("HEADER: " + str(header))
+        # store header info in tuple
+        (seq, window, ack, eof) = header_struct.unpack(header)
+        # separate packet data from header
+        data = packet[16:]
+        log("DATA: " + str(data))
+        # converts packet into string
+        packet_str = packet.decode("UTF-8")
+        log("PACKET: " + packet_str)
 
-    (data, addr) = result
+        try:
+            # If the EOF flag is set, exit
+            log("EOF: " + str(eof))
+            if eof == 1:
+                log("[completed]")
+                sys.exit(0)
 
-    s = struct.Struct('I I I I')
-    header = data[:16]
-    log("AHHH" + str(data[0]))
-    log("AHHHHHHH" + str(data[1]))
+            # If there is data, we accept it and print it out
+            if data:
+                # If we receive data, we assume it's in-order
+                # TODO
+                log("[recv data] " + str(seq) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
+                sys.stdout.write(str(data))
 
-    (seq, window, ack, eof) = s.unpack(header)
-    dictionary = result[16:]
+            # Send back an ack to the sender
+            msg = bytearray()
+            # calculate ack as sequence number + length of data
+            calc_ack = int(seq + len(data))
+            rec_ack = calc_ack.to_bytes(2, 'big')
+            log("BINARY ACK: " + str(rec_ack))
+            msg.extend(rec_ack)
+            log("DECIMAL ACK: " + str(int.from_bytes(rec_ack, byteorder="big")))
+            log("MSG TO SEND BACK TO SENDER: " + str(msg))
 
-    dict_str = data.decode("UTF-8")
-    log("DICT_STR IS: " + dict_str)
-
-    #dictionary = dict(dict_str)
-    #dictionary = str(data['sequence'])
-    #log("SUCCESSS: "  + str(dictionary))
-    # dictionary = eval(base64.b64decode(data))
-    # dictionary = ast.literal_eval(dict_str)
-
-    #log ("DICT IS: " + str(mydata))
-    #log("SEQUENCE IS: " + str(mydata['sequence']))
-    # log("[DATA] " + data)
-    try:
-      decoded = json.loads(data)
-
-      # If the EOF flag is set, exit
-      if (decoded['eof']):
-        log("[completed]")
-        sys.exit(0)
-
-      # If there is data, we accept it and print it out
-      if (decoded['data']):
-        # If we receive data, we assume it's in-order
-        # TODO
-        log("[recv data] " + str(decoded['sequence']) + " (" + str(len(decoded['data'])) + ") ACCEPTED (in-order)")
-        sys.stdout.write(decoded['data'])
-
-      # Send back an ack to the sender
-      msg = json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
-      log("ABOUT TO SEND " + msg)
-      if sock.sendto(msg, addr) < len(msg):
-        log("[error] unable to fully send packet")
-
-    except (ValueError, KeyError, TypeError) as e:
-      log("[recv corrupt packet]")
-      raise e
-  else:
-    log("[error] timeout")
-    sys.exit(-1)
+            if sock.sendto(msg, addr) < len(msg):
+                log("[error] unable to fully send packet")
+        except (ValueError, KeyError, TypeError) as e:
+            log("[recv corrupt packet]")
+            raise e
+    else:
+        log("[error] timeout")
+        sys.exit(-1)
