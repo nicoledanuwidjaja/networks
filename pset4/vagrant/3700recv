@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 # Usage: ./3700recv <recv_port>
 import sys
 import socket
@@ -6,6 +6,7 @@ import time
 import datetime
 import select
 import json
+import struct
 
 MSG_SIZE = 1500
 TIMEOUT = 30
@@ -33,9 +34,36 @@ while True:
   # log("RESULT" + result[0])
   # log(str(type(result[0])))
 
+  # unpacking everything:
+  # recv - bytes object
+  # header = msg[:HEADER_SIZE]
+  # (a, b, c, d) = struct.unpack(format, header)
+  # data = msg[HEADER_SIZE:]
+
   # If nothing is ready, we hit the timeout
   if result:
+
     (data, addr) = result
+
+    s = struct.Struct('I I I I')
+    header = data[:16]
+    log("AHHH" + str(data[0]))
+    log("AHHHHHHH" + str(data[1]))
+
+    (seq, window, ack, eof) = s.unpack(header)
+    dictionary = result[16:]
+
+    dict_str = data.decode("UTF-8")
+    log("DICT_STR IS: " + dict_str)
+
+    #dictionary = dict(dict_str)
+    #dictionary = str(data['sequence'])
+    #log("SUCCESSS: "  + str(dictionary))
+    # dictionary = eval(base64.b64decode(data))
+    # dictionary = ast.literal_eval(dict_str)
+
+    #log ("DICT IS: " + str(mydata))
+    #log("SEQUENCE IS: " + str(mydata['sequence']))
     # log("[DATA] " + data)
     try:
       decoded = json.loads(data)
