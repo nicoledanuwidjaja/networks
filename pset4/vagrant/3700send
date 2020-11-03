@@ -63,16 +63,18 @@ while True:
     log("ABOUT TO SLEEP")
     result = sock.recvfrom(MSG_SIZE)
     if result:
-        (data, addr) = result
+        (received, addr) = result
         try:
-            decoded = json.loads(data)
+            # receive new ack number from client
+            ack_num = received[:DATA_SIZE]
+            log("RECEIVED ACK: " + str(ack_num))
 
             # If there is an ack, send next packet
-            if decoded['ack'] == SEQUENCE:
+            if ack_num == SEQUENCE:
                 log("[recv ack] " + str(SEQUENCE))
 
                 # Try to send next packet; break if no more data
-                if (not send_next_packet()):
+                if not send_next_packet():
                     break
         except (ValueError, KeyError, TypeError):
             log("[recv corrupt packet]")
@@ -80,5 +82,15 @@ while True:
         log("[error] timeout")
         sys.exit(-1)
 
-sock.sendto(json.dumps({"eof": True, "data": "", "sequence": SEQUENCE, "ack": False}), dest)
+
+# create struct for passing packet header data (16 bytes)
+header_format = (SEQUENCE, 0, False, False)
+header_struct = struct.Struct('I I I I')
+header = header_struct.pack(*header_format)
+
+# message contains no besides end packet (?? is this right)
+msg = bytearray()
+msg.extend(header)
+log("HEADER: " + str(header))
+sock.sendto(msg, dest)
 sys.exit(0)
