@@ -38,13 +38,13 @@ while True:
         (packet, addr) = result
 
         # create struct for receiving packet header data (16 bytes)
-        header_struct = struct.Struct('I I I I')
-        header = packet[:16]
+        header_struct = struct.Struct('I I ? ?')
+        header = packet[:10]
         log("HEADER: " + str(header))
         # store header info in tuple
         (seq, window, ack, eof) = header_struct.unpack(header)
         # separate packet data from header
-        data = packet[16:]
+        data = packet[10:]
         log("DATA: " + str(data))
         # converts packet into string
         packet_str = packet.decode("UTF-8")
@@ -76,6 +76,8 @@ while True:
 
             if sock.sendto(msg, addr) < len(msg):
                 log("[error] unable to fully send packet")
+            else:
+                log("[send ack] " + str(msg))
         except (ValueError, KeyError, TypeError) as e:
             log("[recv corrupt packet]")
             raise e

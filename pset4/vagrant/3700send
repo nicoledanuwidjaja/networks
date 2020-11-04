@@ -10,7 +10,7 @@ import json
 
 MSG_SIZE = 1500
 DATA_SIZE = 1000
-TIMEOUT = 30
+TIMEOUT = 2
 SEQUENCE = 0
 
 # Bind to localhost and an ephemeral port
@@ -34,14 +34,15 @@ def send_next_packet():
     data = sys.stdin.buffer.read(DATA_SIZE)
 
     if len(data) > 0:
-        # create struct for passing packet header data (16 bytes)
+        log("DATA FROM BUFFER: " + str(data))
+        # create struct for passing packet header data (10 bytes)
         header_format = (SEQUENCE, 0, False, False)
-        header_struct = struct.Struct('I I I I')
+        header_struct = struct.Struct('I I ? ?')
         header = header_struct.pack(*header_format)
 
         msg = bytearray()
         msg.extend(header)
-        log("HEADER: " + str(header))
+        log("LINE 44 HEADER: " + str(header))
         msg.extend(data)
         log("MESSAGE: " + str(msg))
 
@@ -52,6 +53,14 @@ def send_next_packet():
             log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
         return True
     else:
+        # header_format = (SEQUENCE, 0, False, True)
+        # header_struct = struct.Struct('I I ? ?')
+        # header = header_struct.pack(*header_format)
+        # msg = bytearray()
+        # msg.extend(header)
+        # sock.sendto(msg, dest)
+        # log('[completed]')
+        # sys.exit(0)
         return False
 
 
@@ -64,9 +73,10 @@ while True:
     result = sock.recvfrom(MSG_SIZE)
     if result:
         (received, addr) = result
+        log(str(received))
         try:
             # receive new ack number from client
-            ack_num = received[:DATA_SIZE]
+            ack_num = int.from_bytes(received, byteorder='big') - DATA_SIZE
             log("RECEIVED ACK: " + str(ack_num))
 
             # If there is an ack, send next packet
@@ -83,14 +93,15 @@ while True:
         sys.exit(-1)
 
 
-# create struct for passing packet header data (16 bytes)
+# create struct for passing packet header data (10 bytes)
+# (sequence, window, ack, eof)
 header_format = (SEQUENCE, 0, False, False)
-header_struct = struct.Struct('I I I I')
+header_struct = struct.Struct('I I ? ?')
 header = header_struct.pack(*header_format)
 
 # message contains no besides end packet (?? is this right)
 msg = bytearray()
 msg.extend(header)
-log("HEADER: " + str(header))
+log("LINE 95 HEADER: " + str(header))
 sock.sendto(msg, dest)
 sys.exit(0)
