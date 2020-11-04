@@ -92,6 +92,14 @@ while True:
         log("[error] timeout")
         sys.exit(-1)
 
+header_format = (SEQUENCE, 0, False, True)
+header_struct = struct.Struct('I I ? ?')
+header = header_struct.pack(*header_format)
+msg = bytearray()
+msg.extend(header)
+sock.sendto(msg, dest)
+log('[completed]')
+
 
 # create struct for passing packet header data (10 bytes)
 # (sequence, window, ack, eof)

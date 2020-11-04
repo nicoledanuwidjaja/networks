@@ -32,6 +32,7 @@ log("[bound] " + str(UDP_PORT))
 while True:
     log("Listening...")
     result = sock.recvfrom(MSG_SIZE)
+    log("RECEIVED MSG")
 
     # If nothing is ready, we hit the timeout
     if result:
@@ -62,7 +63,7 @@ while True:
                 # If we receive data, we assume it's in-order
                 # TODO
                 log("[recv data] " + str(seq) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
-                sys.stdout.write(str(data))
+                sys.stdout.buffer.write(data)
 
             # Send back an ack to the sender
             msg = bytearray()
