@@ -80,13 +80,13 @@ while True:
 
             # Send back an ack to the sender
             next_ack = calcNextAck(seq, data)
-            msg = bytearray()
             # update global ACK
             updatePrevAck(next_ack)
             rec_ack = next_ack.to_bytes(4, 'big')
             log("BINARY ACK: " + str(rec_ack))
+
+            msg = bytearray()
             msg.extend(rec_ack)
-            log("DECIMAL ACK: " + str(int.from_bytes(rec_ack, byteorder="big")))
             log("MSG TO SEND BACK TO SENDER: " + str(msg))
 
             if sock.sendto(msg, addr) < len(msg):

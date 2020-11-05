@@ -12,7 +12,11 @@ MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 5
 SEQUENCE = 0
+
+# global storage
 DATA = {}
+send_time = datetime.datetime.now()
+rec_time = datetime.datetime.now()
 RTT = 0
 
 # Bind to localhost and an ephemeral port
@@ -24,8 +28,6 @@ dest = (UDP_IP, UDP_PORT)
 # Set up the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
-
-
 
 # TODO: HANDLE REORDERED PACKETS
 # TODO: HANDLE DROPPED PACKETS
@@ -39,18 +41,19 @@ sock.settimeout(TIMEOUT)
 # missing sequence numbers indicate lost packets
 
 # TODO: IMPLEMENT RTT/RTP
+# RTT (Round Trip Time) = time to send data + time to receive ACK
 # has to do with using the time stamps
+# - Store the time packet is sent and time ACK received and do calculations for old/new rtt
+
 # new_rtt = α (old_rtt) + (1 – α)(new_sample)
 # Recommended α: 0.8-0.9 (0.875 for most TCPs)
 # RTO = 2 * new_rtt (i.e. TCP is conservative)
 # KARN'S ALGORITHM: ignore samples for retransmitted segments when calculating RTT
 
-
-
 # add to data array when sending a new data package
 def addToData(data):
     # the ack expected if this data is received
-    expectedAck = SEQUENCE + 1000
+    expectedAck = SEQUENCE + DATA_SIZE
     DATA[expectedAck] = data
 
 
@@ -58,6 +61,10 @@ def addToData(data):
 def deleteFromData(ack):
     del DATA[ack]
 
+# TODO
+# update RTT when finished transmission
+def updateRTT():
+    RTT = rec_time - send_time
 
 # updates the sequence number so that the receiver and sender can keep track of appropriate sequence of packets
 def updateSequence(ack_num):
@@ -76,8 +83,6 @@ def log(string):
 
 def send_next_packet():
     global SEQUENCE
-
-
     data = sys.stdin.buffer.read(DATA_SIZE)
 
     if len(data) > 0:
@@ -100,6 +105,7 @@ def send_next_packet():
         if sock.sendto(msg, dest) < len(msg):
             log("[error] unable to fully send packet")
         else:
+            send_time = datetime.datetime.now().strftime("%H:%M:%S.%f")
             log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
         return True
     else:
@@ -126,6 +132,12 @@ while True:
         # log(str(received))
         try:
             # receive new ack number from client
+            rec_time = datetime.datetime.now().strftime("%H:%M:%S.%f")
+
+            # TODO: THIS IS CAUSING A TIMEOUT :(
+            # updateRTT()
+            # log("[RTT]" + RTT)
+
             ack_num = int.from_bytes(received, byteorder='big')
             # what the most recently sent seq num should be ACCORDING to the ack_num
             prev_seq = ack_num - 1000
@@ -144,6 +156,7 @@ while True:
         except (ValueError, KeyError, TypeError):
             log("[recv corrupt packet]")
     else:
+        # TODO: Use timeout to detect lost packets instead of just exiting
         log("[error] timeout")
         sys.exit(-1)
 
