@@ -17,7 +17,9 @@ SEQUENCE = 0
 DATA = {}
 send_time = datetime.datetime.now()
 rec_time = datetime.datetime.now()
+retry_time = datetime.datetime.now()
 RTT = 0
+RTO = 0
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -62,9 +64,23 @@ def deleteFromData(ack):
     del DATA[ack]
 
 # TODO
-# update RTT when finished transmission
+# update sample when finished transmission
 def updateRTT():
-    RTT = rec_time - send_time
+    global RTT
+    new_sample = (rec_time - send_time).total_seconds()
+    alpha = 0.875
+    RTT = (alpha * RTT) + (1 - alpha)*new_sample
+
+# update retransmission time out after every round trip
+def updateRTO():
+    global RTO
+    RTO = RTT * 2
+
+
+# update retransmission time???
+# def updateRetry():
+
+
 
 # updates the sequence number so that the receiver and sender can keep track of appropriate sequence of packets
 def updateSequence(ack_num):
@@ -77,12 +93,20 @@ def updatePacket(msg):
     PREVPACKET = msg
 
 
+# retransmits a package that we haven't received an ACK for yet
+def retransmit():
+    global DATA
+    msg = DATA[SEQUENCE + DATA_SIZE]
+    sock.sendto(msg, dest)
+
+
 def log(string):
     sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
 
 
 def send_next_packet():
     global SEQUENCE
+    global send_time
     data = sys.stdin.buffer.read(DATA_SIZE)
 
     if len(data) > 0:
@@ -98,14 +122,14 @@ def send_next_packet():
         msg.extend(data)
         # log("MESSAGE: " + str(msg))
 
-        # ADD DATA TO DATA DICT
-        addToData(data)
+        # ADD MSG TO DATA DICT
+        addToData(msg)
 
         # checks if the current message size is the same
         if sock.sendto(msg, dest) < len(msg):
             log("[error] unable to fully send packet")
         else:
-            send_time = datetime.datetime.now().strftime("%H:%M:%S.%f")
+            send_time = datetime.datetime.now()
             log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
         return True
     else:
@@ -132,11 +156,15 @@ while True:
         # log(str(received))
         try:
             # receive new ack number from client
-            rec_time = datetime.datetime.now().strftime("%H:%M:%S.%f")
+            rec_time = datetime.datetime.now()
 
-            # TODO: THIS IS CAUSING A TIMEOUT :(
-            # updateRTT()
-            # log("[RTT]" + RTT)
+            # RTT sample retransmissions
+            updateRTT()
+            log("[RTT]" + str(RTT))
+            updateRTO()
+            log("[RTO]" + str(RTO))
+            # updateRetry()
+            # log("[RETRY TIME]" + str(retry_time))
 
             ack_num = int.from_bytes(received, byteorder='big')
             # what the most recently sent seq num should be ACCORDING to the ack_num
@@ -156,9 +184,14 @@ while True:
         except (ValueError, KeyError, TypeError):
             log("[recv corrupt packet]")
     else:
-        # TODO: Use timeout to detect lost packets instead of just exiting
-        log("[error] timeout")
-        sys.exit(-1)
+        curr_time = datetime.datetime.now()
+        secs_elapsed = (curr_time - send_time).total_seconds()
+        if secs_elapsed > RTO:
+            # TODO: Use timeout to detect lost packets instead of just exiting
+            retransmit()
+            # log("[error] timeout")
+        # retry
+        # sys.exit(-1)
 
 header_format = (SEQUENCE, 0, False, True)
 header_struct = struct.Struct('I I ? ?')
