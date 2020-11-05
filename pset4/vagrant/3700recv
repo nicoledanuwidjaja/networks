@@ -9,7 +9,21 @@ import json
 import struct
 
 MSG_SIZE = 1500
-TIMEOUT = 30
+TIMEOUT = 5
+
+# things to keep updating
+SEQUENCE = 0
+PREVACK = 0
+
+
+def updatePrevAck(next_ack):
+    global PREVACK
+    PREVACK = next_ack
+
+
+# calculate ack as sequence number + length of data
+def calcNextAck(seq, data):
+    return int(seq + len(data))
 
 
 def log(string):
@@ -46,10 +60,8 @@ while True:
         (seq, window, ack, eof) = header_struct.unpack(header)
         # separate packet data from header
         data = packet[10:]
-        log("DATA: " + str(data))
+        # log("DATA: " + str(data))
         # converts packet into string
-        packet_str = packet.decode("UTF-8")
-        log("PACKET: " + packet_str)
 
         try:
             # If the EOF flag is set, exit
@@ -61,15 +73,17 @@ while True:
             # If there is data, we accept it and print it out
             if data:
                 # If we receive data, we assume it's in-order
-                # TODO
-                log("[recv data] " + str(seq) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
-                sys.stdout.buffer.write(data)
+                if seq == PREVACK:
+                    log("NEXT PACKET IN SEQUENCE HAS BEEN RECEIVED")
+                    log("[recv data] " + str(seq) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
+                    sys.stdout.buffer.write(data)
 
             # Send back an ack to the sender
+            next_ack = calcNextAck(seq, data)
             msg = bytearray()
-            # calculate ack as sequence number + length of data
-            calc_ack = int(seq + len(data))
-            rec_ack = calc_ack.to_bytes(2, 'big')
+            # update global ACK
+            updatePrevAck(next_ack)
+            rec_ack = next_ack.to_bytes(4, 'big')
             log("BINARY ACK: " + str(rec_ack))
             msg.extend(rec_ack)
             log("DECIMAL ACK: " + str(int.from_bytes(rec_ack, byteorder="big")))

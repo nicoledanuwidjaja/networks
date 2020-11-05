@@ -10,8 +10,10 @@ import json
 
 MSG_SIZE = 1500
 DATA_SIZE = 1000
-TIMEOUT = 2
+TIMEOUT = 5
 SEQUENCE = 0
+PREVPACKET = None
+
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -24,6 +26,17 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
 
+# updates the sequence number so that the receiver and sender can keep track of appropriate sequence of packets
+def updateSequence(ack_num):
+    global SEQUENCE
+    SEQUENCE = ack_num
+
+
+def updatePacket(msg):
+    global PREVPACKET
+    PREVPACKET = msg
+
+
 def log(string):
     sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
 
@@ -34,7 +47,7 @@ def send_next_packet():
     data = sys.stdin.buffer.read(DATA_SIZE)
 
     if len(data) > 0:
-        log("DATA FROM BUFFER: " + str(data))
+        # log("DATA FROM BUFFER: " + str(data))
         # create struct for passing packet header data (10 bytes)
         header_format = (SEQUENCE, 0, False, False)
         header_struct = struct.Struct('I I ? ?')
@@ -44,7 +57,7 @@ def send_next_packet():
         msg.extend(header)
         log("LINE 44 HEADER: " + str(header))
         msg.extend(data)
-        log("MESSAGE: " + str(msg))
+        # log("MESSAGE: " + str(msg))
 
         # checks if the current message size is the same
         if sock.sendto(msg, dest) < len(msg):
@@ -73,16 +86,18 @@ while True:
     result = sock.recvfrom(MSG_SIZE)
     if result:
         (received, addr) = result
-        log(str(received))
+        # log(str(received))
         try:
             # receive new ack number from client
-            ack_num = int.from_bytes(received, byteorder='big') - DATA_SIZE
+            ack_num = int.from_bytes(received, byteorder='big')
+            # what the most recently sent seq num should be ACCORDING to the ack_num
+            prev_seq = ack_num - 1000
             log("RECEIVED ACK: " + str(ack_num))
 
             # If there is an ack, send next packet
-            if ack_num == SEQUENCE:
-                log("[recv ack] " + str(SEQUENCE))
-
+            if prev_seq == SEQUENCE:
+                # update SEQUENCE to be the ACK the recv returned
+                updateSequence(ack_num)
                 # Try to send next packet; break if no more data
                 if not send_next_packet():
                     break
@@ -100,16 +115,16 @@ msg.extend(header)
 sock.sendto(msg, dest)
 log('[completed]')
 
-
-# create struct for passing packet header data (10 bytes)
-# (sequence, window, ack, eof)
-header_format = (SEQUENCE, 0, False, False)
-header_struct = struct.Struct('I I ? ?')
-header = header_struct.pack(*header_format)
-
-# message contains no besides end packet (?? is this right)
-msg = bytearray()
-msg.extend(header)
-log("LINE 95 HEADER: " + str(header))
-sock.sendto(msg, dest)
-sys.exit(0)
+#
+# # create struct for passing packet header data (10 bytes)
+# # (sequence, window, ack, eof)
+# header_format = (SEQUENCE, 0, False, False)
+# header_struct = struct.Struct('I I ? ?')
+# header = header_struct.pack(*header_format)
+#
+# # message contains no besides end packet (?? is this right)
+# msg = bytearray()
+# msg.extend(header)
+# log("LINE 95 HEADER: " + str(header))
+# sock.sendto(msg, dest)
+# sys.exit(0)
