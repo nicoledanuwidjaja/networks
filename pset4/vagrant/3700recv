@@ -61,16 +61,17 @@ def updateRTO():
 # updates the ack number so the ack # equals the next ack to be sent/sequence # of the next datagram to be received
 # add to ACKS array when sending a NEW ack package, treated as a stack
 def updateAck(next_ack):
-    global ACKS, ACK
+    global SENT_ACKS, ACK
     ACK = next_ack
-    ACKS.append(ACK)
+    SENT_ACKS.append(ACK)
 
-# retransmit an ACK package because recv timed out for a datagram response
-def retransmit():
+
+# transmits given ack size
+def transmit(ack):
     global ACKS
     # make ACK packet
     msg = bytearray()
-    rec_ack = ACK.to_bytes(4, 'big')
+    rec_ack = ack.to_bytes(4, 'big')
     msg.extend(rec_ack)
     # send the ACK packet
     sock.sendto(msg, addr)
@@ -78,7 +79,7 @@ def retransmit():
 
 # print statement
 def log(string):
-    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
+    sys.stderr.write("[" + datetime.datetime.now().strftime("%H:%M:%S.%f") + "]" + " CLIENT: " + string + "\n")
 
 
 # RECV SHOULD THEN IGNORE DUPLICATE SENT DATAGRAMS
@@ -97,11 +98,11 @@ while True:
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
+    # TODO: should we put this in a try catch?
     result = sock.recvfrom(MSG_SIZE)
-
     # if there is a DATAGRAM we received from the sender
     if result:
-        log("THERE IS STUFF TO BE RECEIVED")
+        log("THERE IS STUFF TO BE RECEIVED FROM SENDER")
         (packet, addr) = result
         # create struct to unpack the packet header data
         header_struct = struct.Struct("I ?")
@@ -110,15 +111,23 @@ while True:
         (seq, eof) = header_struct.unpack(header)
         # separate the actual data from header
         data = packet[5:]
+        # log("DATA: " + str(data))
         log("SEQUENCE # " + str(int(seq)))
-        log("ACK + DATA LEN " + str(ACK + len(data)))
         log("ACK # " + str(ACK))
+        log("DATA LENGTH " + str(len(data)))
+
+        # if this is just an empty datagram telling us the file is complete
+        if not data and eof == 1:
+            log('[completed]')
+            log('Network exited!')
+            sys.exit(0)
+
         # if seq equals the previously sent ACK number
         if seq == ACK:
             log("THE STUFF IS NEXT IN ORDER")
             # write this new data to the buffer
             sys.stdout.buffer.write(data)
-
+            # update received time and RTO
             rec_time = datetime.datetime.now()
             updateRTO()
             # send back an updated ack (acknowledging the last datagram received)
@@ -126,46 +135,23 @@ while True:
             next_ack = ACK + len(data)
             log("NEXT_ACK " + str(next_ack))
             updateAck(next_ack)
-
-            # TODO: IDK IF THIS SHOULD BE A DICTIONARY OR JUST A PREVIOUS ACK
-            # I think you should just store the ack since the ip and port aren't ever changing; I combined this with updateAck
             log("SENT ACKS: " + str(SENT_ACKS))
+            transmit(next_ack)
 
-            # make ACK packet
-            msg = bytearray()
-            rec_ack = next_ack.to_bytes(4, 'big')
-            msg.extend(rec_ack)
-
-            # send the ACK packet
-            sock.sendto(msg, addr)
-            # update the send_time to correspond to now
-            # since we just sent a datagram
+            # update the send_time to correspond to now since we just sent a datagram
             send_time = datetime.datetime.now()
-
             log("NEXT ACK HAS BEEN SENT")
-
-            # if this is just a datagram telling us the file is complete
-            if eof == 1:
-                log('[completed]')
-                sys.exit(0)
 
         # if seq is less than the previously sent ACK number
         # means a duplicate has been sent
         elif seq < ACK:
             log("THE STUFF IS A DUPLICATE")
-            # don't write to buffer BUT
-            # still send an ack back saying it has been received
-            # make ACK packet
-            msg = bytearray()
-            # not using same code as above because we don't know how far
-            # back we have encountered this ACK (might not be immediately previous ack)
+            # don't write to buffer BUT still send an ack back saying it has been received
             sending_ack = seq + len(data)
-            rec_ack = sending_ack.to_bytes(4, 'big')
-            msg.extend(rec_ack)
-
-            # send the ACK packet
-            sock.sendto(msg, addr)
+            transmit(sending_ack)
         # TODO: elif seq is greater than the previously sent ACK number
+        elif seq > ACK:
+            log("DROP DROP OUT OF ORDER")
         # means the packets are being received out of order
         # so just drop the packet
         # (though i think this should never happen with the way the sender is coded??) hmmmmMMMMMMM
@@ -174,8 +160,8 @@ while True:
     # and it has been longer than RTO
     elif secs_elapsed > RTO:
         log("THERE IS NO STUFF TO BE RECEIVED :( AND RTO HAS HAPPENED")
-        # retransmit the last sent ACK
-        retransmit()
+        # transmits last sent ACK package because recv timed out for a datagram response
+        transmit(ACK)
         log("RETRANSMITTED ACK")
         # change last_sent to be now since we just re-sent a datagram right now
         last_sent = datetime.datetime.now()

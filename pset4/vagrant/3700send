@@ -84,14 +84,14 @@ def deleteFromData(ack):
 # retransmit a data package because sender timed out for an ACK response
 def retransmit():
     global DATA
-    # get the data of the ACK that we were exepcting (but didn't get)
+    # get the data of the ACK that we were expecting (but didn't get)
     msg = DATA[SEQUENCE + DATA_SIZE]
     sock.sendto(msg, dest)
 
 
 # print statement
 def log(string):
-    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
+    sys.stderr.write("[" + datetime.datetime.now().strftime("%H:%M:%S.%f") + "]" + " SENDER: " + string + "\n")
 
 
 # sends the next packet to recv
@@ -120,12 +120,10 @@ def send_next_packet():
         # update the send_time to correspond to now
         # since we just sent a datagram
         send_time = datetime.datetime.now()
-
         log("NEXT PACKET HAS BEEN SENT")
 
         # this is not the last packet
         return True
-
     # there is no more data to be sent to recv
     else:
         # send final datagram indicating EOF
@@ -140,11 +138,7 @@ def send_next_packet():
 
         # send the datagram
         sock.sendto(msg, dest)
-
         log("LAST PACKET HAS BEEN SENT")
-
-        # log that the program has ended
-        log('[completed]')
 
         # this is the last packet
         return False
@@ -160,13 +154,15 @@ while True:
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
+    # receive message from client socket
     result = sock.recvfrom(MSG_SIZE)
 
     # if there is an ACK we received from the client
     if result:
-        log("THERE IS STUFF TO BE RECEIVED")
+        log("THERE IS STUFF TO BE RECEIVED FROM CLIENT")
         (received, addr) = result
         ack_num = int.from_bytes(received, byteorder='big')
+
         # if ACK corresponds to the last sent datagram
         if SEQUENCE + DATA_SIZE == ack_num:
             log("THE STUFF IS NEXT IN ORDER")
@@ -176,14 +172,17 @@ while True:
             updateSequence(ack_num)
 
             if not send_next_packet():
+                # sender is done sending
+                log("[completed]")
                 break
             # if we have already received this ACK
             # OR we have already passed this ACK (this should never happen)
             # OR we have not yet received this ACK
             # TODO: I don't know what to do :(
-            # do nothing,
         elif SEQUENCE + DATA_SIZE > ack_num:
             # if (SEQUENCE + 1000 > ack_num) this is a duplicate (aka we've already received this ACK/ passed this ACK)
+            # do nothing
+            log("DUPLICATE?")
             break
         elif SEQUENCE + DATA_SIZE < ack_num:
             # if (SEQUENCE < ack_num) the packets are being sent out of order
@@ -192,7 +191,8 @@ while True:
             # Nicole: Yup, but instead we should reorder them right? Idk how to do that
             # Should we store the misordered packets in a temporary storage and wait until we get the sequences in between?
             # Like: ack_num = 4, SEQ + DATA = 2, store 4 until 3 is reached, then send 4 after 3?
-            # wait i think this is dumb
+            # Like: ack_num = 3000, SEQ + DATA = 1000, oh well catch the 2000 one?
+            log("MISORDERED?")
             break
 
     # if we have NOT gotten a response from the client
