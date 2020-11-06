@@ -6,20 +6,32 @@ import socket
 import time
 import datetime
 import select
-import json
+
+
+# TODO: MAYBE GET RID OF WINDOW AND ACK FOR PART OF HEADER
+# CUZ WE NEVER USE IT
+
+# TODO: HANDLE DUPLICATED ACKS
+# TODO: HANDLE REORDERED ACKS
+    # out of order packets are reordered or dropped
+# TODO: HANDLE DROPPED ACKS
+    # use timeout to detect missing ACKs
+    # missing sequence numbers indicate lost packets
+# TODO: HANDLE DELAYED ACKS
 
 MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 5
 SEQUENCE = 0
 
-# global storage
+#global storage
 DATA = {}
+# only updated when a NEW transmission is sent
 send_time = datetime.datetime.now()
 rec_time = datetime.datetime.now()
-retry_time = datetime.datetime.now()
-RTT = 0
-RTO = 0
+last_sent = datetime.datetime.now()
+RTT = 0 # round trip time
+RTO = 0 # retransmission time out
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -31,186 +43,157 @@ dest = (UDP_IP, UDP_PORT)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
-# TODO: HANDLE REORDERED PACKETS
-# TODO: HANDLE DROPPED PACKETS
 
-# LOST SEGMENTS SHOULD BE HANDLED BY SENDER
-# use timeout to detect missing ACKs
-# need to estimate RTT to calibrate the timeout
+# calculate new sample of round trip time to adjust retransmission time out
+def calculateRTT():
+    global RTT
+    new_sample = (rec_time - send_time).total_seconds()
+    alpha = 0.875
+    RTT = (alpha * RTT) + (1 - alpha)*new_sample
 
-# UTILIZING SEQUENCE #'S
-# out of order packets are reordered or dropped
-# missing sequence numbers indicate lost packets
 
-# TODO: IMPLEMENT RTT/RTP
-# RTT (Round Trip Time) = time to send data + time to receive ACK
-# has to do with using the time stamps
-# - Store the time packet is sent and time ACK received and do calculations for old/new rtt
+# update retransmission time out by first updated RTT then getting the
+# RTO from that new RTT sample
+# SHOULD ONLY BE CALLED ON PACKETS NOT BEING RETRANSMITTED
+def updateRTO():
+    global RTO
+    calculateRTT()
+    RTO = RTT * 2
 
-# new_rtt = α (old_rtt) + (1 – α)(new_sample)
-# Recommended α: 0.8-0.9 (0.875 for most TCPs)
-# RTO = 2 * new_rtt (i.e. TCP is conservative)
-# KARN'S ALGORITHM: ignore samples for retransmitted segments when calculating RTT
+
+# updates the sequence number so the sequence # equals
+# the last received ack / the sequence # of the next datagram to send
+def updateSequence(ack_num):
+    global SEQUENCE
+    SEQUENCE = ack_num
+
 
 # add to data array when sending a new data package
+# key = expected ACK if corresponding datagram is received
 def addToData(data):
     # the ack expected if this data is received
     expectedAck = SEQUENCE + DATA_SIZE
     DATA[expectedAck] = data
 
 
-# delete from data array when received ack for that data package
+# delete from data array once we received the ack for that data package
 def deleteFromData(ack):
     del DATA[ack]
 
-# TODO
-# update sample when finished transmission
-def updateRTT():
-    global RTT
-    new_sample = (rec_time - send_time).total_seconds()
-    alpha = 0.875
-    RTT = (alpha * RTT) + (1 - alpha)*new_sample
 
-# update retransmission time out after every round trip
-def updateRTO():
-    global RTO
-    RTO = RTT * 2
-
-
-# update retransmission time???
-# def updateRetry():
-
-
-
-# updates the sequence number so that the receiver and sender can keep track of appropriate sequence of packets
-def updateSequence(ack_num):
-    global SEQUENCE
-    SEQUENCE = ack_num
-
-
-def updatePacket(msg):
-    global PREVPACKET
-    PREVPACKET = msg
-
-
-# retransmits a package that we haven't received an ACK for yet
+# retransmit a data package because sender timed out for an ACK response
 def retransmit():
     global DATA
+    # get the data of the ACK that we were exepcting (but didn't get)
     msg = DATA[SEQUENCE + DATA_SIZE]
     sock.sendto(msg, dest)
 
 
+# print statement
 def log(string):
     sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " SENDER: " + string + "\n")
 
 
+# sends the next packet to recv
 def send_next_packet():
     global SEQUENCE
     global send_time
     data = sys.stdin.buffer.read(DATA_SIZE)
-
+    # there is more data to be sent to recv
     if len(data) > 0:
-        # log("DATA FROM BUFFER: " + str(data))
-        # create struct for passing packet header data (10 bytes)
+        # make header
         header_format = (SEQUENCE, 0, False, False)
         header_struct = struct.Struct('I I ? ?')
         header = header_struct.pack(*header_format)
 
+        # make datagram
         msg = bytearray()
         msg.extend(header)
-        log("LINE 44 HEADER: " + str(header))
         msg.extend(data)
-        # log("MESSAGE: " + str(msg))
 
-        # ADD MSG TO DATA DICT
+        # add msg to data dict
         addToData(msg)
 
-        # checks if the current message size is the same
-        if sock.sendto(msg, dest) < len(msg):
-            log("[error] unable to fully send packet")
-        else:
-            send_time = datetime.datetime.now()
-            log("[send data] " + str(SEQUENCE) + " (" + str(len(data)) + ")")
+        # send the datagram
+        sock.sendto(msg, dest)
+
+        # update the send_time to correspond to now
+        # since we just sent a datagram
+        send_time = datetime.datetime.now()
+
+        log("NEXT PACKET HAS BEEN SENT")
+
+        # this is not the last packet
         return True
+
+    # there is no more data to be sent to recv
     else:
-        # header_format = (SEQUENCE, 0, False, True)
-        # header_struct = struct.Struct('I I ? ?')
-        # header = header_struct.pack(*header_format)
-        # msg = bytearray()
-        # msg.extend(header)
-        # sock.sendto(msg, dest)
-        # log('[completed]')
-        # sys.exit(0)
+        # send final datagram indicating EOF
+        # make header
+        header_format = (SEQUENCE, 0, False, True)
+        header_struct = struct.Struct('I I ? ?')
+        header = header_struct.pack(*header_format)
+
+        # make datagram
+        msg = bytearray()
+        msg.extend(header)
+
+        # send the datagram
+        sock.sendto(msg, dest)
+
+        log("LAST PACKET HAS BEEN SENT")
+
+        # log that the program has ended
+        log('[completed]')
+
+        # this is the last packet
         return False
 
 
-# Send first packet
+# send the first packet
 send_next_packet()
 
-# Now read in data, send packets
+# Now continuously read in data and send packets
 while True:
-    log("ABOUT TO SLEEP")
+    curr_time = datetime.datetime.now()
+
+    # how much time as elapsed since the last datagram was sent?
+    secs_elapsed = (curr_time - last_sent).total_seconds()
+
     result = sock.recvfrom(MSG_SIZE)
+
+    # if there is an ACK we received from the client
     if result:
+        log("THERE IS STUFF TO BE RECEIVED")
         (received, addr) = result
-        # log(str(received))
-        try:
-            # receive new ack number from client
+        ack_num = int.from_bytes(received, byteorder='big')
+
+        # if ACK corresponds to the last sent datagram
+        if SEQUENCE + 1000 == ack_num:
+            log("THE STUFF IS NEXT IN ORDER")
             rec_time = datetime.datetime.now()
-
-            # RTT sample retransmissions
-            updateRTT()
-            log("[RTT]" + str(RTT))
             updateRTO()
-            log("[RTO]" + str(RTO))
-            # updateRetry()
-            # log("[RETRY TIME]" + str(retry_time))
-
-            ack_num = int.from_bytes(received, byteorder='big')
-            # what the most recently sent seq num should be ACCORDING to the ack_num
-            prev_seq = ack_num - 1000
-            log("RECEIVED ACK: " + str(ack_num))
-
-            # DELETE FROM DATA DICT IF CORRESPONDING ACK IS RECEIVED
             deleteFromData(ack_num)
+            updateSequence(ack_num)
+            if not send_next_packet():
+                break
+        # if we have already received this ACK
+        # OR we have already passed this ACK (this should never happen)
+        # OR we have not yet received this ACK
+        # TODO: elif (SEQUENCE + 1000 > ack_num) or (SEQUENCE + 1000 < ack_num):
+            # do nothing,
+            # if (SEQUENCE + 1000 > ack_num) this is a duplicate (aka we've already received this ACK/ passed this ACK)
+            # if (SEQUENCE < ack_num) the packets are being sent out of order
+                # (CURRENTLY WE'RE DROPPING WRONGLY ORDERED PACKETS)
+            # we are DROPPING anything that does not correspond to the last sent datagram
 
-            # If there is an ack, send next packet
-            if prev_seq == SEQUENCE:
-                # update SEQUENCE to be the ACK the recv returned
-                updateSequence(ack_num)
-                # Try to send next packet; break if no more data
-                if not send_next_packet():
-                    break
-        except (ValueError, KeyError, TypeError):
-            log("[recv corrupt packet]")
-    else:
-        curr_time = datetime.datetime.now()
-        secs_elapsed = (curr_time - send_time).total_seconds()
-        if secs_elapsed > RTO:
-            # TODO: Use timeout to detect lost packets instead of just exiting
-            retransmit()
-            # log("[error] timeout")
-        # retry
-        # sys.exit(-1)
+    # if we have NOT gotten a response from the client
+    # AND it has been longer than RTO
+    elif secs_elapsed > RTO:
+        log("THERE IS NO STUFF TO BE RECEIVED :( AND RTO HAS HAPPENED")
+        # retransmit the last sent datagram
+        retransmit()
+        log("RETRANSMITTED DATAGRAM")
+        # change last_sent to be now since we just re-sent a datagram right now
+        last_sent = datetime.datetime.now()
 
-header_format = (SEQUENCE, 0, False, True)
-header_struct = struct.Struct('I I ? ?')
-header = header_struct.pack(*header_format)
-msg = bytearray()
-msg.extend(header)
-sock.sendto(msg, dest)
-log('[completed]')
-
-#
-# # create struct for passing packet header data (10 bytes)
-# # (sequence, window, ack, eof)
-# header_format = (SEQUENCE, 0, False, False)
-# header_struct = struct.Struct('I I ? ?')
-# header = header_struct.pack(*header_format)
-#
-# # message contains no besides end packet (?? is this right)
-# msg = bytearray()
-# msg.extend(header)
-# log("LINE 95 HEADER: " + str(header))
-# sock.sendto(msg, dest)
-# sys.exit(0)

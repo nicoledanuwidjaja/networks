@@ -8,27 +8,28 @@ import select
 import json
 import struct
 
+# TODO: HANDLE DUPLICATED DATAGRAMS
+# TODO: HANDLE REORDERED DATAGRAMS => add to saveD_data
+# out of order packets are reordered or dropped
+# TODO: HANDLE DROPPED DATAGRAMS
+# use timeout to detect missing DATAGRAMS
+# missing sequence numbers indicate lost packets
+# TODO: HANDLE DELAYED DATAGRAMS
+
 MSG_SIZE = 1500
+DATA_SIZE = 1000
 TIMEOUT = 5
+ACK = 0
 
-# things to keep updating
-SEQUENCE = 0
-PREVACK = 0
-
-
-def updatePrevAck(next_ack):
-    global PREVACK
-    PREVACK = next_ack
-
-
-# calculate ack as sequence number + length of data
-def calcNextAck(seq, data):
-    return int(seq + len(data))
-
-
-def log(string):
-    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
-
+# global storage
+ACKS = {}
+# only updated when a NEW transmission is sent
+send_time = datetime.datetime.now()
+rec_time = datetime.datetime.now()
+last_sent = datetime.datetime.now()
+RTT = 0  # round trip time
+RTO = 0  # retransmission time out
+SAVED_DATA = {}
 
 # Bind to localhost and an ephemeral port
 UDP_IP = "127.0.0.1"
@@ -39,63 +40,151 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 sock.settimeout(TIMEOUT)
 
-# Get port we bound to UDP_PORT = sock.getsockname()[1]
-log("[bound] " + str(UDP_PORT))
 
-# Now listen for packets
+# calculate new sample of round trip time to adjust retransmission time out
+def calculateRTT():
+    global RTT
+    new_sample = (rec_time - send_time).total_seconds()
+    alpha = 0.875
+    RTT = (alpha * RTT) + (1 - alpha) * new_sample
+
+
+# update retransmission time out by first updated RTT then getting the
+# RTO from that new RTT sample
+# SHOULD ONLY BE CALLED ON PACKETS NOT BEING RETRANSMITTED
+def updateRTO():
+    global RTO
+    calculateRTT()
+    RTO = RTT * 2
+
+
+# updates the ack number so the ack # equals
+# the next ack to be sent /
+# the sequence # of the next datagram to be received
+def updateAck(next_ack):
+    global ACK
+    ACK = next_ack
+
+
+# add to ACKS array when sending a NEW ack package
+# key = ACK we are sending corresponding to the address we are sending to
+def addToAck(addr):
+    global ACKS
+    ACKS[ACK] = addr
+
+
+# retransmit an ACK package because recv timed out for a datagram response
+def retransmit():
+    global ACKS
+    # make ACK packet
+    msg = bytearray()
+    rec_ack = ACK.to_bytes(4, 'big')
+    msg.extend(rec_ack)
+    # send the ACK packet
+    sock.sendto(msg, addr)
+
+
+
+# print statement
+def log(string):
+    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " CLIENT: " + string + "\n")
+
+
+# RECV SHOULD THEN IGNORE DUPLICATE SENT DATAGRAMS
+# BUT STILL SEND BACK AN ACK TO SENDER SO IT KNOWS IT GOT IT
+# REGARDLESS OF WHEN RECV GOT IT
+# DUPLICATED
+# REORDERED
+# DROPPED
+# DELAYED
+
+# now listen for packets from the sender and send ACKs for them + write to buffer for new data
 while True:
-    log("Listening...")
+
+    curr_time = datetime.datetime.now()
+
+    # how much time as elapsed since the last datagram was sent?
+    secs_elapsed = (curr_time - last_sent).total_seconds()
+
     result = sock.recvfrom(MSG_SIZE)
-    log("RECEIVED MSG")
 
-    # If nothing is ready, we hit the timeout
+    # if there is a DATAGRAM we received from the sender
     if result:
+        log("THERE IS STUFF TO BE RECEIVED")
         (packet, addr) = result
-
-        # create struct for receiving packet header data (16 bytes)
-        header_struct = struct.Struct('I I ? ?')
+        # create struct to unpack the packet header data
+        header_struct = struct.Struct("I I ? ?")
         header = packet[:10]
-        log("HEADER: " + str(header))
-        # store header info in tuple
+        # store header info into tuple
         (seq, window, ack, eof) = header_struct.unpack(header)
-        # separate packet data from header
+        # separate the actual data from header
         data = packet[10:]
-        # log("DATA: " + str(data))
-        # converts packet into string
+        log("SEQUENCE # " + str(int(seq)))
+        log("ACK + DATA LEN " + str(ACK + len(data)))
+        log("ACK # " + str(ACK))
+        # if seq equals the previously sent ACK number
+        if seq == ACK:
+            log("THE STUFF IS NEXT IN ORDER")
+            # write this new data to the buffer
+            sys.stdout.buffer.write(data)
 
-        try:
-            # If the EOF flag is set, exit
-            log("EOF: " + str(eof))
+            rec_time = datetime.datetime.now()
+            updateRTO()
+            # send back an updated ack (acknowledging the last datagram received)
+            # calculate next ACK to be sent and update global ACK to equal that
+            next_ack = ACK + len(data)
+            log("NEXT_ACK " + str(next_ack))
+            updateAck(next_ack)
+
+            # add the ACK we are sending to our dictionary of sent ACKs
+            # TODO: IDK IF THIS SHOULD BE A DICTIONARY OR JUST A PREVIOUS ACK
+            addToAck(addr)
+
+            # make ACK packet
+            msg = bytearray()
+            rec_ack = next_ack.to_bytes(4, 'big')
+            msg.extend(rec_ack)
+
+            # send the ACK packet
+            sock.sendto(msg, addr)
+            # update the send_time to correspond to now
+            # since we just sent a datagram
+            send_time = datetime.datetime.now()
+
+            log("NEXT ACK HAS BEEN SENT")
+
+            # if this is just a datagram telling us the file is complete
             if eof == 1:
-                log("[completed]")
+                log('[completed]')
                 sys.exit(0)
 
-            # If there is data, we accept it and print it out
-            if data:
-                # If we receive data, we assume it's in-order
-                if seq == PREVACK:
-                    log("NEXT PACKET IN SEQUENCE HAS BEEN RECEIVED")
-                    log("[recv data] " + str(seq) + " (" + str(len(data)) + ") ACCEPTED (in-order)")
-                    sys.stdout.buffer.write(data)
-
-            # Send back an ack to the sender
-            next_ack = calcNextAck(seq, data)
-            # update global ACK
-            updatePrevAck(next_ack)
-            rec_ack = next_ack.to_bytes(4, 'big')
-            log("BINARY ACK: " + str(rec_ack))
-
+        # if seq is less than the previously sent ACK number
+        # means a duplicate has been sent
+        elif seq < ACK:
+            log("THE STUFF IS A DUPLICATE")
+            # don't write to buffer BUT
+            # still send an ack back saying it has been received
+            # make ACK packet
             msg = bytearray()
+            # not using same code as above because we don't know how far
+            # back we have encountered this ACK (might not be immediately previous ack)
+            sending_ack = seq + len(data)
+            rec_ack = sending_ack.to_bytes(4, 'big')
             msg.extend(rec_ack)
-            log("MSG TO SEND BACK TO SENDER: " + str(msg))
 
-            if sock.sendto(msg, addr) < len(msg):
-                log("[error] unable to fully send packet")
-            else:
-                log("[send ack] " + str(msg))
-        except (ValueError, KeyError, TypeError) as e:
-            log("[recv corrupt packet]")
-            raise e
-    else:
-        log("[error] timeout")
-        sys.exit(-1)
+            # send the ACK packet
+            sock.sendto(msg, addr)
+        # TODO: elif seq is greater than the previously sent ACK number
+            # means the packets are being received out of order
+            # so just drop the packet
+            # (though i think this should never happen with the way the sender is coded??)
+
+    # if we have NOT gotten a datagram from the sender
+    # and it has been longer than RTO
+    elif secs_elapsed > RTO:
+        log("THERE IS NO STUFF TO BE RECEIVED :( AND RTO HAS HAPPENED")
+        # retransmit the last sent ACK
+        retransmit()
+        log("RETRANSMITTED ACK")
+        # change last_sent to be now since we just re-sent a datagram right now
+        last_sent = datetime.datetime.now()
