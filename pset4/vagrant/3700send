@@ -7,16 +7,16 @@ import time
 import datetime
 import select
 
-
 # TODO: MAYBE GET RID OF WINDOW AND ACK FOR PART OF HEADER
 # CUZ WE NEVER USE IT
+# OK, DONE MICHELLE :)
 
 # TODO: HANDLE DUPLICATED ACKS
 # TODO: HANDLE REORDERED ACKS
-    # out of order packets are reordered or dropped
+# out of order packets are reordered or dropped
 # TODO: HANDLE DROPPED ACKS
-    # use timeout to detect missing ACKs
-    # missing sequence numbers indicate lost packets
+# use timeout to detect missing ACKs
+# missing sequence numbers indicate lost packets
 # TODO: HANDLE DELAYED ACKS
 
 MSG_SIZE = 1500
@@ -24,14 +24,14 @@ DATA_SIZE = 1000
 TIMEOUT = 5
 SEQUENCE = 0
 
-#global storage
+# global storage
 DATA = {}
 # only updated when a NEW transmission is sent
 send_time = datetime.datetime.now()
 rec_time = datetime.datetime.now()
 last_sent = datetime.datetime.now()
-RTT = 0 # round trip time
-RTO = 0 # retransmission time out
+RTT = 0  # round trip time
+RTO = 0  # retransmission time out
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -49,7 +49,7 @@ def calculateRTT():
     global RTT
     new_sample = (rec_time - send_time).total_seconds()
     alpha = 0.875
-    RTT = (alpha * RTT) + (1 - alpha)*new_sample
+    RTT = (alpha * RTT) + (1 - alpha) * new_sample
 
 
 # update retransmission time out by first updated RTT then getting the
@@ -102,8 +102,8 @@ def send_next_packet():
     # there is more data to be sent to recv
     if len(data) > 0:
         # make header
-        header_format = (SEQUENCE, 0, False, False)
-        header_struct = struct.Struct('I I ? ?')
+        header_format = (SEQUENCE, False)
+        header_struct = struct.Struct('I ?')
         header = header_struct.pack(*header_format)
 
         # make datagram
@@ -130,8 +130,8 @@ def send_next_packet():
     else:
         # send final datagram indicating EOF
         # make header
-        header_format = (SEQUENCE, 0, False, True)
-        header_struct = struct.Struct('I I ? ?')
+        header_format = (SEQUENCE, True)
+        header_struct = struct.Struct('I ?')
         header = header_struct.pack(*header_format)
 
         # make datagram
@@ -167,25 +167,33 @@ while True:
         log("THERE IS STUFF TO BE RECEIVED")
         (received, addr) = result
         ack_num = int.from_bytes(received, byteorder='big')
-
         # if ACK corresponds to the last sent datagram
-        if SEQUENCE + 1000 == ack_num:
+        if SEQUENCE + DATA_SIZE == ack_num:
             log("THE STUFF IS NEXT IN ORDER")
             rec_time = datetime.datetime.now()
             updateRTO()
             deleteFromData(ack_num)
             updateSequence(ack_num)
+
             if not send_next_packet():
                 break
-        # if we have already received this ACK
-        # OR we have already passed this ACK (this should never happen)
-        # OR we have not yet received this ACK
-        # TODO: elif (SEQUENCE + 1000 > ack_num) or (SEQUENCE + 1000 < ack_num):
+            # if we have already received this ACK
+            # OR we have already passed this ACK (this should never happen)
+            # OR we have not yet received this ACK
+            # TODO: I don't know what to do :(
             # do nothing,
+        elif SEQUENCE + DATA_SIZE > ack_num:
             # if (SEQUENCE + 1000 > ack_num) this is a duplicate (aka we've already received this ACK/ passed this ACK)
+            break
+        elif SEQUENCE + DATA_SIZE < ack_num:
             # if (SEQUENCE < ack_num) the packets are being sent out of order
-                # (CURRENTLY WE'RE DROPPING WRONGLY ORDERED PACKETS)
+            # (CURRENTLY WE'RE DROPPING WRONGLY ORDERED PACKETS)
             # we are DROPPING anything that does not correspond to the last sent datagram
+            # Nicole: Yup, but instead we should reorder them right? Idk how to do that
+            # Should we store the misordered packets in a temporary storage and wait until we get the sequences in between?
+            # Like: ack_num = 4, SEQ + DATA = 2, store 4 until 3 is reached, then send 4 after 3?
+            # wait i think this is dumb
+            break
 
     # if we have NOT gotten a response from the client
     # AND it has been longer than RTO
@@ -196,4 +204,3 @@ while True:
         log("RETRANSMITTED DATAGRAM")
         # change last_sent to be now since we just re-sent a datagram right now
         last_sent = datetime.datetime.now()
-

@@ -22,7 +22,7 @@ TIMEOUT = 5
 ACK = 0
 
 # global storage
-ACKS = {}
+SENT_ACKS = []
 # only updated when a NEW transmission is sent
 send_time = datetime.datetime.now()
 rec_time = datetime.datetime.now()
@@ -58,20 +58,12 @@ def updateRTO():
     RTO = RTT * 2
 
 
-# updates the ack number so the ack # equals
-# the next ack to be sent /
-# the sequence # of the next datagram to be received
+# updates the ack number so the ack # equals the next ack to be sent/sequence # of the next datagram to be received
+# add to ACKS array when sending a NEW ack package, treated as a stack
 def updateAck(next_ack):
-    global ACK
+    global ACKS, ACK
     ACK = next_ack
-
-
-# add to ACKS array when sending a NEW ack package
-# key = ACK we are sending corresponding to the address we are sending to
-def addToAck(addr):
-    global ACKS
-    ACKS[ACK] = addr
-
+    ACKS.append(ACK)
 
 # retransmit an ACK package because recv timed out for a datagram response
 def retransmit():
@@ -82,7 +74,6 @@ def retransmit():
     msg.extend(rec_ack)
     # send the ACK packet
     sock.sendto(msg, addr)
-
 
 
 # print statement
@@ -100,7 +91,7 @@ def log(string):
 
 # now listen for packets from the sender and send ACKs for them + write to buffer for new data
 while True:
-
+    # get current time
     curr_time = datetime.datetime.now()
 
     # how much time as elapsed since the last datagram was sent?
@@ -113,12 +104,12 @@ while True:
         log("THERE IS STUFF TO BE RECEIVED")
         (packet, addr) = result
         # create struct to unpack the packet header data
-        header_struct = struct.Struct("I I ? ?")
-        header = packet[:10]
+        header_struct = struct.Struct("I ?")
+        header = packet[:5]
         # store header info into tuple
-        (seq, window, ack, eof) = header_struct.unpack(header)
+        (seq, eof) = header_struct.unpack(header)
         # separate the actual data from header
-        data = packet[10:]
+        data = packet[5:]
         log("SEQUENCE # " + str(int(seq)))
         log("ACK + DATA LEN " + str(ACK + len(data)))
         log("ACK # " + str(ACK))
@@ -136,9 +127,9 @@ while True:
             log("NEXT_ACK " + str(next_ack))
             updateAck(next_ack)
 
-            # add the ACK we are sending to our dictionary of sent ACKs
             # TODO: IDK IF THIS SHOULD BE A DICTIONARY OR JUST A PREVIOUS ACK
-            addToAck(addr)
+            # I think you should just store the ack since the ip and port aren't ever changing; I combined this with updateAck
+            log("SENT ACKS: " + str(SENT_ACKS))
 
             # make ACK packet
             msg = bytearray()
@@ -175,9 +166,9 @@ while True:
             # send the ACK packet
             sock.sendto(msg, addr)
         # TODO: elif seq is greater than the previously sent ACK number
-            # means the packets are being received out of order
-            # so just drop the packet
-            # (though i think this should never happen with the way the sender is coded??)
+        # means the packets are being received out of order
+        # so just drop the packet
+        # (though i think this should never happen with the way the sender is coded??) hmmmmMMMMMMM
 
     # if we have NOT gotten a datagram from the sender
     # and it has been longer than RTO
