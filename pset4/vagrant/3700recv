@@ -2,10 +2,8 @@
 # Usage: ./3700recv <recv_port>
 import sys
 import socket
-import time
 import datetime
 import select
-import json
 import struct
 
 # TODO: HANDLE DUPLICATED DATAGRAMS
@@ -15,7 +13,7 @@ import struct
 # use timeout to detect missing DATAGRAMS
 # missing sequence numbers indicate lost packets
 # TODO: HANDLE DELAYED DATAGRAMS
-
+ADDR = 0.0
 MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 5
@@ -39,6 +37,10 @@ UDP_PORT = int(sys.argv[1])
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 sock.settimeout(TIMEOUT)
+
+# communication channels
+inputs = [sock]
+outputs = []
 
 
 # calculate new sample of round trip time to adjust retransmission time out
@@ -74,7 +76,7 @@ def transmit(ack):
     rec_ack = ack.to_bytes(4, 'big')
     msg.extend(rec_ack)
     # send the ACK packet
-    sock.sendto(msg, addr)
+    sock.sendto(msg, ADDR)
 
 
 # print statement
@@ -91,19 +93,20 @@ def log(string):
 # DELAYED
 
 # now listen for packets from the sender and send ACKs for them + write to buffer for new data
-while True:
+while inputs:
     # get current time
     curr_time = datetime.datetime.now()
 
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
-    # TODO: should we put this in a try catch?
+    reads, writes, errors = select.select(inputs, outputs, inputs)
     result = sock.recvfrom(MSG_SIZE)
     # if there is a DATAGRAM we received from the sender
     if result:
         log("THERE IS STUFF TO BE RECEIVED FROM SENDER")
         (packet, addr) = result
+        ADDR = addr
         # create struct to unpack the packet header data
         header_struct = struct.Struct("I ?")
         header = packet[:5]
@@ -115,12 +118,6 @@ while True:
         log("SEQUENCE # " + str(int(seq)))
         log("ACK # " + str(ACK))
         log("DATA LENGTH " + str(len(data)))
-
-        # if this is just an empty datagram telling us the file is complete
-        if not data and eof == 1:
-            log('[completed]')
-            log('Network exited!')
-            sys.exit(0)
 
         # if seq equals the previously sent ACK number
         if seq == ACK:
@@ -155,6 +152,11 @@ while True:
         # means the packets are being received out of order
         # so just drop the packet
         # (though i think this should never happen with the way the sender is coded??) hmmmmMMMMMMM
+        # if this is just an empty datagram telling us the file is complete
+        if eof == 1:
+            log('[completed]')
+            log('Network exited!')
+            sys.exit(0)
 
     # if we have NOT gotten a datagram from the sender
     # and it has been longer than RTO

@@ -43,6 +43,9 @@ dest = (UDP_IP, UDP_PORT)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(TIMEOUT)
 
+# communication channels
+inputs = [sock]
+outputs = []
 
 # calculate new sample of round trip time to adjust retransmission time out
 def calculateRTT():
@@ -148,13 +151,14 @@ def send_next_packet():
 send_next_packet()
 
 # Now continuously read in data and send packets
-while True:
+while inputs:
     curr_time = datetime.datetime.now()
 
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
     # receive message from client socket
+    reads, writes, errors = select.select(inputs, outputs, inputs)
     result = sock.recvfrom(MSG_SIZE)
 
     # if there is an ACK we received from the client
