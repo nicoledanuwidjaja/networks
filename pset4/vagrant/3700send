@@ -7,20 +7,29 @@ import time
 import datetime
 import select
 
-# TODO: MAYBE GET RID OF WINDOW AND ACK FOR PART OF HEADER
-# CUZ WE NEVER USE IT
-# OK, DONE MICHELLE :)
-# LOOOL THANK U >.<
-
 # TODO: okay so like the testall with delay and duplicates
 # applied are failing now. But since the code is faster i didn't wanna
 # change it back to what we had before esp since u implemented select and
 # everything too so I was trying to figure out why it wont work
+#
+# Nicole: I'm sorry, I spent like 2 hours staring at why it wasn't working and compared old versions but still wasn't sure why??
+# Feel free to change it though I just kept going and tried to work on more things.
+#
 # but i have no idea so instead I just implemented the reordering stuff
 # (saving data we get out of order till we can get rid of it and etc)
 # and added print statements D:
 # ill try working on some tomorrow but i dunno D: i feel v discouraged rn this
 # project is draining my happiness and life force
+
+# NEW TODO: Since if we want to use the congestion window, we need to implement a while loop for sending multiple packets.
+# I imagine it to look something like this: (and I hope this makes sense)
+# def send_multiple_packets():
+#   global CWND
+#   next_msg_ack = SEQUENCE + DATA_SIZE (aka wherever we last left off for sending packets)
+#   while next_msg_ack < CWND:
+#       send_next_packet()
+# I also added the congestion window code stuff everywhere here
+
 
 # TODO: HANDLE DUPLICATED ACKS
 # TODO: HANDLE REORDERED ACKS
@@ -35,15 +44,18 @@ DATA_SIZE = 1000
 TIMEOUT = 5
 SEQUENCE = 0
 
-# global storage
+# global storage, key = expected ACK if corresponding datagram is received
 DATA = {}
-# only updated when a NEW transmission is sent
+SAVED_ACKS = []
+# timestamps, only updated when a NEW transmission is sent
 send_time = datetime.datetime.now()
 rec_time = datetime.datetime.now()
 last_sent = datetime.datetime.now()
 RTT = 0  # round trip time
 RTO = 0  # retransmission time out
-SAVED_ACKS = []
+CWND = 1  # congestion window size
+ADV_WND = 65535  # maximum size of TCP buffer
+SSTHRESH = ADV_WND  # slow start threshold
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -72,10 +84,15 @@ def calculateRTT():
 # RTO from that new RTT sample
 # SHOULD ONLY BE CALLED ON PACKETS NOT BEING RETRANSMITTED
 def updateRTO():
-    global RTO
-    global RTT
+    global RTO, RTT
     calculateRTT()
     RTO = RTT * 2
+
+
+# update congestion window based on difference of current ack and most recent ack
+def updateCWND(curr_ack):
+    global CWND
+    CWND = curr_ack
 
 
 # updates the sequence number so the sequence # equals
@@ -86,10 +103,8 @@ def updateSequence(ack_num):
 
 
 # add to data array when sending a new data package
-# key = expected ACK if corresponding datagram is received
 def addToData(data):
-    global SEQUENCE
-    global DATA_SIZE
+    global SEQUENCE, DATA_SIZE
     # the ack expected if this data is received
     expectedAck = SEQUENCE + DATA_SIZE
     DATA[expectedAck] = data
@@ -104,20 +119,18 @@ def deleteFromData(ack):
 
 # retransmit a data package because sender timed out for an ACK response
 def retransmit():
-    global DATA
-    global SEQUENCE
-    global DATA_SIZE
+    global DATA, SEQUENCE, DATA_SIZE
     # get the data of the ACK that we were expecting (but didn't get)
     msg = DATA[SEQUENCE + DATA_SIZE]
     sock.sendto(msg, dest)
 
 
 def filterSavedAcks():
-    global SAVED_ACKS
-    global SEQUENCE
+    global SAVED_ACKS, SEQUENCE
     while SEQUENCE in SAVED_ACKS:
         SAVED_ACKS.remove(SEQUENCE)
         updateSequence(SEQUENCE + 1000)
+
 
 # print statement
 def log(string):
@@ -126,9 +139,7 @@ def log(string):
 
 # sends the next packet to recv
 def send_next_packet():
-    global SEQUENCE
-    global send_time
-    global DATA_SIZE
+    global SEQUENCE, send_time, DATA_SIZE
 
     data = sys.stdin.buffer.read(DATA_SIZE)
     # there is more data to be sent to recv
@@ -186,15 +197,14 @@ while inputs:
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
-    # TODO: it times out on select
+    # checks if ack data can be received
+    reads, writes, errors = select.select(inputs, outputs, inputs, RTO)
+
     # receive message from client socket
-    reads, writes, errors = select.select(inputs, outputs, inputs)
-    log("STARTING INPUTS")
     result = sock.recvfrom(MSG_SIZE)
 
-    # if there is an ACK we received from the client
+    # proceed if data is received from client
     if result:
-        log("THERE IS STUFF TO BE RECEIVED FROM CLIENT")
         (received, addr) = result
         ack_num = int.from_bytes(received, byteorder='big')
         log("ACK_NUM: " + str(ack_num))
@@ -203,39 +213,40 @@ while inputs:
         if SEQUENCE + DATA_SIZE == ack_num:
             log("THE STUFF IS NEXT IN ORDER")
             rec_time = datetime.datetime.now()
+            # when new ack received, commence slow start if congestion window is less than slow start threshold, else do congestion avoidance
+            if CWND < SSTHRESH:
+                new_cwnd = CWND + 1
+            else:
+                new_cwnd = round((CWND + 1) / CWND)
+            updateCWND(new_cwnd)
             updateRTO()
             deleteFromData(ack_num)
             updateSequence(ack_num)
             filterSavedAcks()
+
             if not send_next_packet():
                 # sender is done sending
                 log("[completed]")
                 break
-            # if we have already received this ACK
-            # OR we have already passed this ACK (this should never happen)
-            # OR we have not yet received this ACK
-        elif SEQUENCE + DATA_SIZE > ack_num:
-            # if (SEQUENCE + 1000 > ack_num) this is a duplicate (aka we've already received this ACK/ passed this ACK)
-            # do nothing
-            break
         elif SEQUENCE + DATA_SIZE < ack_num:
             log("ACKS ARE BEING RECEIVED OUT OF ORDER")
             # if (SEQUENCE < ack_num) the packets are being sent out of order
-            # (CURRENTLY WE'RE DROPPING WRONGLY ORDERED PACKETS)
-            # we are DROPPING anything that does not correspond to the last sent datagram
-            # Nicole: Yup, but instead we should reorder them right? Idk how to do that
-            # Should we store the misordered packets in a temporary storage and wait until we get the sequences in between?
-            # Like: ack_num = 4, SEQ + DATA = 2, store 4 until 3 is reached, then send 4 after 3?
-            # Like: ack_num = 3000, SEQ + DATA = 1000, oh well catch the 2000 one?
             SAVED_ACKS.append(ack_num)
+            # update congestion window based on most recent ack
+            new_cwnd = CWND + ack_num - (SEQUENCE + DATA_SIZE)
+            updateCWND(new_cwnd)
             break
-        else:
-            log("THIS IS WHERE ITS TIMING OUT")
+        # Nicole: i don't think it should time out here
+        # else:
+        #     log("THIS IS WHERE ITS TIMING OUT")
 
-    # if we have NOT gotten a response from the client
-    # AND it has been longer than RTO
+    # if we have NOT gotten a response from the client, AND it has been longer than RTO = timeout
     elif secs_elapsed > RTO:
-        log("THERE IS NO STUFF TO BE RECEIVED :( AND RTO HAS HAPPENED")
+        log('TIMEOUT OCCURRED')
+        # multiplicative decrease
+        SSTHRESH = round(CWND / 2)
+        # reset congestion window to 1
+        updateCWND(1)
         # retransmit the last sent datagram
         retransmit()
         log("RETRANSMITTED DATAGRAM")

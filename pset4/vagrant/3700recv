@@ -89,7 +89,7 @@ def filterSavedData():
     global SAVED_DATA
     while ACK in SAVED_DATA:
         data = SAVED_DATA[ACK]
-        sys.stdout.buffer.wite(data)
+        sys.stdout.buffer.write(data)
         del SAVED_DATA[ACK]
         updateAck(ACK + len(data))
         if not data:
