@@ -10,6 +10,17 @@ import select
 # TODO: MAYBE GET RID OF WINDOW AND ACK FOR PART OF HEADER
 # CUZ WE NEVER USE IT
 # OK, DONE MICHELLE :)
+# LOOOL THANK U >.<
+
+# TODO: okay so like the testall with delay and duplicates
+# applied are failing now. But since the code is faster i didn't wanna
+# change it back to what we had before esp since u implemented select and
+# everything too so I was trying to figure out why it wont work
+# but i have no idea so instead I just implemented the reordering stuff
+# (saving data we get out of order till we can get rid of it and etc)
+# and added print statements D:
+# ill try working on some tomorrow but i dunno D: i feel v discouraged rn this
+# project is draining my happiness and life force
 
 # TODO: HANDLE DUPLICATED ACKS
 # TODO: HANDLE REORDERED ACKS
@@ -32,6 +43,7 @@ rec_time = datetime.datetime.now()
 last_sent = datetime.datetime.now()
 RTT = 0  # round trip time
 RTO = 0  # retransmission time out
+SAVED_ACKS = []
 
 # Bind to localhost and an ephemeral port
 IP_PORT = sys.argv[1]
@@ -47,6 +59,7 @@ sock.settimeout(TIMEOUT)
 inputs = [sock]
 outputs = []
 
+
 # calculate new sample of round trip time to adjust retransmission time out
 def calculateRTT():
     global RTT
@@ -60,6 +73,7 @@ def calculateRTT():
 # SHOULD ONLY BE CALLED ON PACKETS NOT BEING RETRANSMITTED
 def updateRTO():
     global RTO
+    global RTT
     calculateRTT()
     RTO = RTT * 2
 
@@ -74,6 +88,8 @@ def updateSequence(ack_num):
 # add to data array when sending a new data package
 # key = expected ACK if corresponding datagram is received
 def addToData(data):
+    global SEQUENCE
+    global DATA_SIZE
     # the ack expected if this data is received
     expectedAck = SEQUENCE + DATA_SIZE
     DATA[expectedAck] = data
@@ -81,16 +97,27 @@ def addToData(data):
 
 # delete from data array once we received the ack for that data package
 def deleteFromData(ack):
-    del DATA[ack]
+    global DATA
+    if ack in DATA:
+        del DATA[ack]
 
 
 # retransmit a data package because sender timed out for an ACK response
 def retransmit():
     global DATA
+    global SEQUENCE
+    global DATA_SIZE
     # get the data of the ACK that we were expecting (but didn't get)
     msg = DATA[SEQUENCE + DATA_SIZE]
     sock.sendto(msg, dest)
 
+
+def filterSavedAcks():
+    global SAVED_ACKS
+    global SEQUENCE
+    while SEQUENCE in SAVED_ACKS:
+        SAVED_ACKS.remove(SEQUENCE)
+        updateSequence(SEQUENCE + 1000)
 
 # print statement
 def log(string):
@@ -101,6 +128,8 @@ def log(string):
 def send_next_packet():
     global SEQUENCE
     global send_time
+    global DATA_SIZE
+
     data = sys.stdin.buffer.read(DATA_SIZE)
     # there is more data to be sent to recv
     if len(data) > 0:
@@ -157,8 +186,10 @@ while inputs:
     # how much time as elapsed since the last datagram was sent?
     secs_elapsed = (curr_time - last_sent).total_seconds()
 
+    # TODO: it times out on select
     # receive message from client socket
     reads, writes, errors = select.select(inputs, outputs, inputs)
+    log("STARTING INPUTS")
     result = sock.recvfrom(MSG_SIZE)
 
     # if there is an ACK we received from the client
@@ -166,7 +197,8 @@ while inputs:
         log("THERE IS STUFF TO BE RECEIVED FROM CLIENT")
         (received, addr) = result
         ack_num = int.from_bytes(received, byteorder='big')
-
+        log("ACK_NUM: " + str(ack_num))
+        log("SEQUENCE: " + str(SEQUENCE))
         # if ACK corresponds to the last sent datagram
         if SEQUENCE + DATA_SIZE == ack_num:
             log("THE STUFF IS NEXT IN ORDER")
@@ -174,7 +206,7 @@ while inputs:
             updateRTO()
             deleteFromData(ack_num)
             updateSequence(ack_num)
-
+            filterSavedAcks()
             if not send_next_packet():
                 # sender is done sending
                 log("[completed]")
@@ -182,13 +214,12 @@ while inputs:
             # if we have already received this ACK
             # OR we have already passed this ACK (this should never happen)
             # OR we have not yet received this ACK
-            # TODO: I don't know what to do :(
         elif SEQUENCE + DATA_SIZE > ack_num:
             # if (SEQUENCE + 1000 > ack_num) this is a duplicate (aka we've already received this ACK/ passed this ACK)
             # do nothing
-            log("DUPLICATE?")
             break
         elif SEQUENCE + DATA_SIZE < ack_num:
+            log("ACKS ARE BEING RECEIVED OUT OF ORDER")
             # if (SEQUENCE < ack_num) the packets are being sent out of order
             # (CURRENTLY WE'RE DROPPING WRONGLY ORDERED PACKETS)
             # we are DROPPING anything that does not correspond to the last sent datagram
@@ -196,8 +227,10 @@ while inputs:
             # Should we store the misordered packets in a temporary storage and wait until we get the sequences in between?
             # Like: ack_num = 4, SEQ + DATA = 2, store 4 until 3 is reached, then send 4 after 3?
             # Like: ack_num = 3000, SEQ + DATA = 1000, oh well catch the 2000 one?
-            log("MISORDERED?")
+            SAVED_ACKS.append(ack_num)
             break
+        else:
+            log("THIS IS WHERE ITS TIMING OUT")
 
     # if we have NOT gotten a response from the client
     # AND it has been longer than RTO

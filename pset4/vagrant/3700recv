@@ -77,6 +77,25 @@ def transmit(ack):
     msg.extend(rec_ack)
     # send the ACK packet
     sock.sendto(msg, ADDR)
+    log("TRANSMITTED")
+
+
+def addToSavedData(seq, data):
+    global SAVED_DATA
+    SAVED_DATA[seq] = data
+
+
+def filterSavedData():
+    global SAVED_DATA
+    while ACK in SAVED_DATA:
+        data = SAVED_DATA[ACK]
+        sys.stdout.buffer.wite(data)
+        del SAVED_DATA[ACK]
+        updateAck(ACK + len(data))
+        if not data:
+            log('[completed]')
+            log('Network exited!')
+            sys.exit(0)
 
 
 # print statement
