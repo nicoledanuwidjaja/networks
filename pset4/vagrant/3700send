@@ -7,38 +7,6 @@ import time
 import datetime
 import select
 
-# TODO: okay so like the testall with delay and duplicates
-# applied are failing now. But since the code is faster i didn't wanna
-# change it back to what we had before esp since u implemented select and
-# everything too so I was trying to figure out why it wont work
-#
-# Nicole: I'm sorry, I spent like 2 hours staring at why it wasn't working and compared old versions but still wasn't sure why??
-# Feel free to change it though I just kept going and tried to work on more things.
-#
-# but i have no idea so instead I just implemented the reordering stuff
-# (saving data we get out of order till we can get rid of it and etc)
-# and added print statements D:
-# ill try working on some tomorrow but i dunno D: i feel v discouraged rn this
-# project is draining my happiness and life force
-
-# NEW TODO: Since if we want to use the congestion window, we need to implement a while loop for sending multiple packets.
-# I imagine it to look something like this: (and I hope this makes sense)
-# def send_multiple_packets():
-#   global CWND
-#   next_msg_ack = SEQUENCE + DATA_SIZE (aka wherever we last left off for sending packets)
-#   while next_msg_ack < CWND:
-#       send_next_packet()
-# I also added the congestion window code stuff everywhere here
-
-
-# TODO: HANDLE DUPLICATED ACKS
-# TODO: HANDLE REORDERED ACKS
-# out of order packets are reordered or dropped
-# TODO: HANDLE DROPPED ACKS
-# use timeout to detect missing ACKs
-# missing sequence numbers indicate lost packets
-# TODO: HANDLE DELAYED ACKS
-
 MSG_SIZE = 1500
 DATA_SIZE = 1000
 TIMEOUT = 5
@@ -53,7 +21,7 @@ rec_time = datetime.datetime.now()
 last_sent = datetime.datetime.now()
 RTT = 0  # round trip time
 RTO = 0  # retransmission time out
-CWND = 1  # congestion window size
+CWND = 10  # congestion window size
 ADV_WND = 65535  # maximum size of TCP buffer
 SSTHRESH = ADV_WND  # slow start threshold
 
@@ -86,13 +54,15 @@ def calculateRTT():
 def updateRTO():
     global RTO, RTT
     calculateRTT()
-    RTO = RTT * 2
+    RTO = max(RTT * 2, 0.2)
 
 
 # update congestion window based on difference of current ack and most recent ack
 def updateCWND(curr_ack):
     global CWND
     CWND = curr_ack
+    log("CWND: " + str(CWND))
+
 
 
 # updates the sequence number so the sequence # equals
@@ -129,12 +99,21 @@ def filterSavedAcks():
     global SAVED_ACKS, SEQUENCE
     while SEQUENCE in SAVED_ACKS:
         SAVED_ACKS.remove(SEQUENCE)
-        updateSequence(SEQUENCE + 1000)
+        updateSequence(SEQUENCE + DATA_SIZE)
 
 
 # print statement
 def log(string):
     sys.stderr.write("[" + datetime.datetime.now().strftime("%H:%M:%S.%f") + "]" + " SENDER: " + string + "\n")
+
+
+# send multiple packets at once
+def send_multiple_packets():
+  global CWND
+  next_msg_ack = SEQUENCE + DATA_SIZE
+  while next_msg_ack < CWND:
+      log("Send next packet!")
+      send_next_packet()
 
 
 # sends the next packet to recv
@@ -167,9 +146,8 @@ def send_next_packet():
 
         # this is not the last packet
         return True
-    # there is no more data to be sent to recv
+    # there is no more data to be sent to recv, send final datagram indicating EOF
     else:
-        # send final datagram indicating EOF
         # make header
         header_format = (SEQUENCE, True)
         header_struct = struct.Struct('I ?')
@@ -192,6 +170,7 @@ send_next_packet()
 
 # Now continuously read in data and send packets
 while inputs:
+    log("READING DATA...")
     curr_time = datetime.datetime.now()
 
     # how much time as elapsed since the last datagram was sent?
@@ -201,8 +180,12 @@ while inputs:
     reads, writes, errors = select.select(inputs, outputs, inputs, RTO)
 
     # receive message from client socket
-    result = sock.recvfrom(MSG_SIZE)
+    try:
+        result = sock.recvfrom(MSG_SIZE)
+    except:
+        result = None
 
+    log('SECS ELAPSED: ' + str(secs_elapsed))
     # proceed if data is received from client
     if result:
         (received, addr) = result
@@ -213,11 +196,13 @@ while inputs:
         if SEQUENCE + DATA_SIZE == ack_num:
             log("THE STUFF IS NEXT IN ORDER")
             rec_time = datetime.datetime.now()
+
             # when new ack received, commence slow start if congestion window is less than slow start threshold, else do congestion avoidance
             if CWND < SSTHRESH:
                 new_cwnd = CWND + 1
             else:
                 new_cwnd = round((CWND + 1) / CWND)
+
             updateCWND(new_cwnd)
             updateRTO()
             deleteFromData(ack_num)
@@ -234,14 +219,12 @@ while inputs:
             SAVED_ACKS.append(ack_num)
             # update congestion window based on most recent ack
             new_cwnd = CWND + ack_num - (SEQUENCE + DATA_SIZE)
+            log("NEW CWND: " + str(new_cwnd))
             updateCWND(new_cwnd)
             break
-        # Nicole: i don't think it should time out here
-        # else:
-        #     log("THIS IS WHERE ITS TIMING OUT")
 
     # if we have NOT gotten a response from the client, AND it has been longer than RTO = timeout
-    elif secs_elapsed > RTO:
+    else:
         log('TIMEOUT OCCURRED')
         # multiplicative decrease
         SSTHRESH = round(CWND / 2)
@@ -252,3 +235,6 @@ while inputs:
         log("RETRANSMITTED DATAGRAM")
         # change last_sent to be now since we just re-sent a datagram right now
         last_sent = datetime.datetime.now()
+        send_multiple_packets()
+
+sys.exit(0)

@@ -6,13 +6,6 @@ import datetime
 import select
 import struct
 
-# TODO: HANDLE DUPLICATED DATAGRAMS
-# TODO: HANDLE REORDERED DATAGRAMS => add to saveD_data
-# out of order packets are reordered or dropped
-# TODO: HANDLE DROPPED DATAGRAMS
-# use timeout to detect missing DATAGRAMS
-# missing sequence numbers indicate lost packets
-# TODO: HANDLE DELAYED DATAGRAMS
 ADDR = 0.0
 MSG_SIZE = 1500
 DATA_SIZE = 1000
@@ -20,6 +13,7 @@ TIMEOUT = 5
 ACK = 0
 
 # global storage
+WINDOW = 16  # arbitrary value for advertised window
 SENT_ACKS = []
 # only updated when a NEW transmission is sent
 send_time = datetime.datetime.now()
@@ -51,8 +45,7 @@ def calculateRTT():
     RTT = (alpha * RTT) + (1 - alpha) * new_sample
 
 
-# update retransmission time out by first updated RTT then getting the
-# RTO from that new RTT sample
+# update retransmission time out by first updated RTT then getting the RTO from that new RTT sample
 # SHOULD ONLY BE CALLED ON PACKETS NOT BEING RETRANSMITTED
 def updateRTO():
     global RTO
@@ -85,6 +78,7 @@ def addToSavedData(seq, data):
     SAVED_DATA[seq] = data
 
 
+# i don't know if we need this
 def filterSavedData():
     global SAVED_DATA
     while ACK in SAVED_DATA:
@@ -103,14 +97,6 @@ def log(string):
     sys.stderr.write("[" + datetime.datetime.now().strftime("%H:%M:%S.%f") + "]" + " CLIENT: " + string + "\n")
 
 
-# RECV SHOULD THEN IGNORE DUPLICATE SENT DATAGRAMS
-# BUT STILL SEND BACK AN ACK TO SENDER SO IT KNOWS IT GOT IT
-# REGARDLESS OF WHEN RECV GOT IT
-# DUPLICATED
-# REORDERED
-# DROPPED
-# DELAYED
-
 # now listen for packets from the sender and send ACKs for them + write to buffer for new data
 while inputs:
     # get current time
@@ -123,7 +109,6 @@ while inputs:
     result = sock.recvfrom(MSG_SIZE)
     # if there is a DATAGRAM we received from the sender
     if result:
-        log("THERE IS STUFF TO BE RECEIVED FROM SENDER")
         (packet, addr) = result
         ADDR = addr
         # create struct to unpack the packet header data
@@ -138,9 +123,8 @@ while inputs:
         log("ACK # " + str(ACK))
         log("DATA LENGTH " + str(len(data)))
 
-        # if seq equals the previously sent ACK number
+        # new data packet
         if seq == ACK:
-            log("THE STUFF IS NEXT IN ORDER")
             # write this new data to the buffer
             sys.stdout.buffer.write(data)
             # update received time and RTO
@@ -149,7 +133,7 @@ while inputs:
             # send back an updated ack (acknowledging the last datagram received)
             # calculate next ACK to be sent and update global ACK to equal that
             next_ack = ACK + len(data)
-            log("NEXT_ACK " + str(next_ack))
+            log("NEXT ACK " + str(next_ack))
             updateAck(next_ack)
             log("SENT ACKS: " + str(SENT_ACKS))
             transmit(next_ack)
@@ -158,28 +142,20 @@ while inputs:
             send_time = datetime.datetime.now()
             log("NEXT ACK HAS BEEN SENT")
 
-        # if seq is less than the previously sent ACK number
-        # means a duplicate has been sent
+        # a duplicate has been sent
         elif seq < ACK:
             log("THE STUFF IS A DUPLICATE")
             # don't write to buffer BUT still send an ack back saying it has been received
             sending_ack = seq + len(data)
             transmit(sending_ack)
-        # TODO: elif seq is greater than the previously sent ACK number
-        elif seq > ACK:
-            log("DROP DROP OUT OF ORDER")
-        # means the packets are being received out of order
-        # so just drop the packet
-        # (though i think this should never happen with the way the sender is coded??) hmmmmMMMMMMM
-        # if this is just an empty datagram telling us the file is complete
+
         if eof == 1:
             log('[completed]')
             log('Network exited!')
             sys.exit(0)
 
-    # if we have NOT gotten a datagram from the sender
-    # and it has been longer than RTO
-    elif secs_elapsed > RTO:
+    # if we have NOT gotten a datagram from the sender and it has been longer than RTO
+    else:
         log("THERE IS NO STUFF TO BE RECEIVED :( AND RTO HAS HAPPENED")
         # transmits last sent ACK package because recv timed out for a datagram response
         transmit(ACK)
