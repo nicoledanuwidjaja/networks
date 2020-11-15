@@ -1,5 +1,8 @@
-import socket, argparse
+#!/usr/bin/env python3
+import socket
+import argparse
 import html.parser
+import sys
 from html.parser import HTMLParser
 
 # parse the command line arguments
@@ -9,17 +12,27 @@ parser.add_argument('password')
 args = parser.parse_args()
 
 username = args.username
+# TBOW0SB4
 password = args.password
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(('http://www.3700.network/fakebook/', 80))
+s.connect(('www.3700.network', 80))
+
+
+# DATA CHUNK SIZE
+DATA_SIZE = 9000
 
 # tracks uncrawled URLs
 frontier_tracker = []
+cookie = ""
+secret_tickets = []
+request = b'GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: www.3700.network\r\n\r\n'
+
+
+# (Host, Content-Length, Content-Type, Cookie and the data to be sent)
+
 
 # methods for handling the parser
-def get_start_tag(parser):
-    parser.handle_starttag()
 
 
 def end_of_page(tag):
@@ -54,13 +67,22 @@ def postMsg(nuid, pw):
 
 
 parser = MyHTMLParser()
-parser.feed('<html><head><title>Test</title></head>'
-            '<body><h1>Parse me!</h1></body></html>')
 
-parser.hand
 
-# run the script
-while True:
-    s.read
+
+# read one page (parsing the HTML)
+# - update header cookies for next request
+# - add new URLs to frontier_tracker
+# - if secret ticket is found, add to secret ticket list
+def readPage():
+    s.sendall(request)
+    result = s.recv(DATA_SIZE)
+    resStr = result.decode('utf-8')
+    print(resStr)
+
+# after reading one page
+# - make new request for next URL in frontier_tracker
+
+readPage()
 
 sys.exit(0)
