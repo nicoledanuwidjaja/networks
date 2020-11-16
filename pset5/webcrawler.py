@@ -3,6 +3,9 @@ import socket
 import argparse
 import html.parser
 import sys
+import datetime
+import time
+from collections import deque
 from html.parser import HTMLParser
 
 # parse the command line arguments
@@ -21,10 +24,10 @@ password = args.password
 DATA_SIZE = 9000
 
 # tracks uncrawled URLs
-frontier_tracker = []
+frontier_tracker = deque([])
 traversed = []
 cookies = []
-secret_tickets = []
+flags = []
 request = b'GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: www.3700.network\r\n\r\n'
 header = []
 
@@ -35,33 +38,34 @@ def printList(title, ls):
     for l in ls:
         print(l)
 
+# checks if a link is valid
+def validLink(link):
+    if ('fakebook' in link) and (link not in traversed) and (link not in frontier_tracker):
+        return True
+    else:
+        return False
 
-# methods for handling the parser
+# handles 'a' tags
+def handleATag(attrs):
+    (href, link) = attrs[0]
+    if validLink(link):
+        frontier_tracker.append(link)
+        # print(link)
 
+class MyHTMLParser(HTMLParser):
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            handleATag(attrs)
 
-# def login():
-#     msg = f'POST /accounts/login/?next=/fakebook/ HTTP/1.1' \
-#           f'\r\nHost: 3700.network\r\nContent-Length: 34\r\n' \
-#           f'username={nuid}&password={pw}\r\n\r\n'
-#     return msg
-#
-# def end_of_page(tag):
-#     if tag == 'html':
-#         return True
-#
-# class MyHTMLParser(HTMLParser):
-#     def handle_starttag(self, tag, attrs):
-#
-#     def handle_endtag(self, tag):
-#         if tag == 'html':
-#             # go to next url in frontier_tracker
-#         if tag == '':
-#             # login
-#
-#     def handle_data(self, data):
-#         print("Encountered some data  :", data)
-#
-#
+    def handle_endtag(self, tag):
+        return None
+
+    def handle_data(self, data):
+        # print(data)
+        if "FLAG" in data:
+            flags.append(data[6:])
+            # print(data)
+
 
 #
 # def postMsg(nuid, pw, cookie):
@@ -74,12 +78,12 @@ def printList(title, ls):
 # parser = MyHTMLParser()
 
 def readInitialLoginPage():
-    print('READING INITIAL LOGIN PAGE')
+    # print('READING INITIAL LOGIN PAGE')
     result = s.recv(DATA_SIZE)
     resStr = result.decode('utf-8')
     pageList = resStr.split('\r\n')
     header = makeHeaderList(pageList)
-    print('200 RETURNED')
+    # print('200 RETURNED')
     handleCookies(header)
     parseHTML(pageList)
 
@@ -100,7 +104,7 @@ def sendLoginRequest():
           f'\r\nHost: www.3700.network\r\nContent-Type: application/x-www-form-urlencoded' \
           f'\r\nContent-Length: {cl}\r\n{cookie_str}\r\n\r\n' \
           f'username={username}&password={password}&csrfmiddlewaretoken={csrf}&next=/fakebook/'
-    print(msg)
+    # print(msg)
     request = bytes(msg, 'utf-8')
     s.sendall(request)
 
@@ -109,12 +113,13 @@ def sendLoginRequest():
 # - add new URLs to frontier_tracker
 # - if secret ticket is found, add to secret ticket list
 def readPage(result):
-    print('\nREADING NEW PAGE')
+    # print('\nREADING NEW PAGE')
     # result = s.recv(DATA_SIZE)
     resStr = result.decode('utf-8')
     pageList = resStr.split('\r\n')
+    # print(pageList)
     header = makeHeaderList(pageList)
-    printList('HEADER', header)
+    handleCookies(header)
     handleStatusCode(header, pageList)
 
 # make header list from response
@@ -137,27 +142,29 @@ def handleStatusCode(header, pageList):
     statusCode = header[0]
     if '500' in statusCode:
         # resend same request
-        print('500 RETURNED')
+        # print('500 RETURNED')
         s.sendall(request)
     elif '403' in statusCode or '404' in statusCode:
         # send next request
         print('403 RETURNED')
-        sendGetRequest()
+        sendNextGetRequest()
     elif '302' in statusCode:
         # send same request with new given url
-        print('302 RETURNED')
+        # print('302 RETURNED')
+        # printList("302", header)
         loc = ''
         for h in header:
             if 'Location' in h:
                 loc = h
         loc = loc[10:]
-        # handleCookies(header)
+        # cookies.pop(-1)
+        handleCookies(header)
         sendGetRequest(loc)
     elif '200' in statusCode:
         # if everything is good, first update list of cookies,
         # then parse HTML body
         # then send request for next url in frontier_tracker
-        print('200 RETURNED')
+        # print('200 RETURNED')
         handleCookies(header)
         parseHTML(pageList)
         sendNextGetRequest()
@@ -173,7 +180,7 @@ def cookieString():
 # update list of cookies
 def handleCookies(header):
     global cookies
-    cookies = []
+    # cookies = []
     for h in header:
         if 'Set-Cookie' in h:
             parsed_line = h.split(';')
@@ -190,11 +197,14 @@ def parseHTML(pageList):
             body = i
             break
     # print('\nBODY: ', body)
+    parser = MyHTMLParser()
+    parser.feed(body)
 
 # send GET request for next url in frontier_tracker
 def sendNextGetRequest():
     global request
-    sendGetRequest(frontier_tracker.pop(0))
+    # next_link = frontier_tracker.pop(0)
+    sendGetRequest(frontier_tracker.popleft())
 
 # send new GET request based on given url
 def sendGetRequest(url):
@@ -215,14 +225,19 @@ def sendGetRequest(url):
     # msg += content_length
     # msg += content_type
     msg += cookie
-    msg += '\r\n'
-    print('MSG: ')
-    print(msg)
+    msg += '\r\n\r\n'
+    # print('MSG: ')
+    # print(msg)
     # SEND GET REQUEST
     request = bytes(msg, 'utf-8')
     s.sendall(request)
-    print('sent')
+    print(url)
+    # print('sent')
+    # add traversed url to traversed
+    traversed.append(url)
 
+start = datetime.datetime.now()
+print(start)
 # make initial request
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect(('www.3700.network', 80))
@@ -233,7 +248,18 @@ readInitialLoginPage()
 sendLoginRequest()
 # start running readPage
 result = s.recv(DATA_SIZE)
+count = 0
 while result:
     readPage(result)
-    s.recv(DATA_SIZE)
-sys.exit(0)
+    if len(flags) >= 5:
+        printList('FLAGS', flags)
+        end = datetime.datetime.now()
+        print(end)
+        print((end - start).total_seconds())
+        sys.exit(0)
+    else:
+        result = s.recv(DATA_SIZE)
+        count+=1
+        # print(count)
+        print(flags)
+
