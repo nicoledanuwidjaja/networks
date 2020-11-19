@@ -15,22 +15,20 @@ parser.add_argument('password')
 args = parser.parse_args()
 
 username = args.username
-# TBOW0SB4
+# TBOW0SB4 (Michelle), FPYDCAIB (Nicole)
 password = args.password
-
-
 
 # DATA CHUNK SIZE
 DATA_SIZE = 9000
 
 # tracks uncrawled URLs
-frontier_tracker = deque([])
-traversed = []
-cookies = []
-flags = []
+frontier_tracker = deque([]) # store URLs to visit in queue
+traversed = [] # store visited URLs to avoid loop
+cookies = [] # store cookies obtained from logging in
+flags = [] # store secret flags found on pages
 request = b'GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: www.3700.network\r\n\r\n'
 header = []
-
+url_count = 0
 
 # helper methods for debugging
 def printList(title, ls):
@@ -40,10 +38,7 @@ def printList(title, ls):
 
 # checks if a link is valid
 def validLink(link):
-    if ('fakebook' in link) and (link not in traversed) and (link not in frontier_tracker):
-        return True
-    else:
-        return False
+    return ('fakebook' in link) and (link not in traversed) and (link not in frontier_tracker)
 
 # handles 'a' tags
 def handleATag(attrs):
@@ -52,10 +47,20 @@ def handleATag(attrs):
         frontier_tracker.append(link)
         # print(link)
 
+# handles possible error
+def handleError(attrs):
+    for attr in attrs:
+        (type, val) = attr
+        if type == 'class' and val == 'errorlist':
+            print("There was an error.")
+            sys.exit(1)
+
 class MyHTMLParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == 'a':
             handleATag(attrs)
+        if tag == 'ul':
+            handleError(attrs)
 
     def handle_endtag(self, tag):
         return None
@@ -63,19 +68,10 @@ class MyHTMLParser(HTMLParser):
     def handle_data(self, data):
         # print(data)
         if "FLAG" in data:
+            print("Found flag!")
             flags.append(data[6:])
             # print(data)
 
-
-#
-# def postMsg(nuid, pw, cookie):
-#     msg = f'POST /accounts/login/?next=/fakebook/ HTTP/1.1' \
-#           f'\r\nHost: 3700.network\r\nContent-Length: 34\r\n' \
-#           f'username={nuid}&password={pw}\r\n\r\n'
-#     return msg
-#
-#
-# parser = MyHTMLParser()
 
 def readInitialLoginPage():
     # print('READING INITIAL LOGIN PAGE')
@@ -196,7 +192,7 @@ def parseHTML(pageList):
         if 'html' in i:
             body = i
             break
-    # print('\nBODY: ', body)
+#     print('\nBODY: ', body)
     parser = MyHTMLParser()
     parser.feed(body)
 
@@ -204,6 +200,9 @@ def parseHTML(pageList):
 def sendNextGetRequest():
     global request
     # next_link = frontier_tracker.pop(0)
+    if not frontier_tracker:
+        print("Frontier is empty!")
+        sys.exit(1)
     sendGetRequest(frontier_tracker.popleft())
 
 # send new GET request based on given url
@@ -219,6 +218,7 @@ def sendGetRequest(url):
     # content_type = 'Content-Type: text/html; charset=utf-8\r\n'
     content_type = 'Content-Type: application/x-www-form-urlencoded\r\n'
     cookie = cookieString()
+
     msg = ''
     msg += request_type
     msg += host
@@ -232,15 +232,17 @@ def sendGetRequest(url):
     request = bytes(msg, 'utf-8')
     s.sendall(request)
     print(url)
-    # print('sent')
     # add traversed url to traversed
     traversed.append(url)
 
+
+# run program
 start = datetime.datetime.now()
-print(start)
-# make initial request
+print("Start Time: ", start)
+# set up network connection
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect(('www.3700.network', 80))
+# make initial request
 s.sendall(request)
 # read initial response
 readInitialLoginPage()
@@ -248,18 +250,21 @@ readInitialLoginPage()
 sendLoginRequest()
 # start running readPage
 result = s.recv(DATA_SIZE)
-count = 0
+
 while result:
     readPage(result)
     if len(flags) >= 5:
         printList('FLAGS', flags)
         end = datetime.datetime.now()
-        print(end)
-        print((end - start).total_seconds())
+        print("End Time: ", end)
+        print("Total Time: ", (end - start).total_seconds())
         sys.exit(0)
     else:
         result = s.recv(DATA_SIZE)
-        count+=1
-        # print(count)
-        print(flags)
+        url_count += 1
+#         print("Url count: " + str(url_count))
+#         print("Flags: " + str(flags))
+
+print("Flags: " + str(flags))
+
 
