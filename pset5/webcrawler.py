@@ -13,49 +13,32 @@ parser = argparse.ArgumentParser()
 parser.add_argument('username')
 parser.add_argument('password')
 args = parser.parse_args()
-
+# Nicole: 1489806 FPYDCAIB
+# Michelle: 1418910 TBOW0SB4
 username = args.username
-# TBOW0SB4
 password = args.password
 
+# CONSTANTS
+DATA_SIZE = 9000 # DATA CHUNK SIZE
+HOST = 'www.3700.network'
+PORT = 80
 
+frontier_tracker = deque([]) # store URLs to visit in queue
+traversed = [] # store visited URLs to avoid loop
+cookies = [] # store cookies obtained from logging in
+flags = [] # store secret flags found on pages
 
-# DATA CHUNK SIZE
-DATA_SIZE = 9000
-
-# tracks uncrawled URLs
-frontier_tracker = deque([])
-traversed = []
-cookies = []
-flags = []
 request = b'GET /accounts/login/?next=/fakebook/ HTTP/1.1\r\nHost: www.3700.network\r\n\r\n'
 header = []
+url_count = 0
 
-
-# helper methods for debugging
-def printList(title, ls):
-    print('\n', title, ': ')
-    for l in ls:
-        print(l)
-
-# checks if a link is valid
-def validLink(link):
-    if ('fakebook' in link) and (link not in traversed) and (link not in frontier_tracker):
-        return True
-    else:
-        return False
-
-# handles 'a' tags
-def handleATag(attrs):
-    (href, link) = attrs[0]
-    if validLink(link):
-        frontier_tracker.append(link)
-        # print(link)
-
-class MyHTMLParser(HTMLParser):
+# html parser class for retrieving data from pages
+class FakebookParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == 'a':
-            handleATag(attrs)
+            self.handleATag(attrs)
+        if tag == 'ul':
+            self.handleError(attrs)
 
     def handle_endtag(self, tag):
         return None
@@ -63,19 +46,28 @@ class MyHTMLParser(HTMLParser):
     def handle_data(self, data):
         # print(data)
         if "FLAG" in data:
-            flags.append(data[6:])
-            # print(data)
+            flag = data[6:]
+            flags.append(flag)
+            print(flag)
 
+    # handles 'a' tags
+    def handleATag(self, attrs):
+        (href, link) = attrs[0]
+        if self.validLink(link):
+            frontier_tracker.append(link)
 
-#
-# def postMsg(nuid, pw, cookie):
-#     msg = f'POST /accounts/login/?next=/fakebook/ HTTP/1.1' \
-#           f'\r\nHost: 3700.network\r\nContent-Length: 34\r\n' \
-#           f'username={nuid}&password={pw}\r\n\r\n'
-#     return msg
-#
-#
-# parser = MyHTMLParser()
+    # handles possible error
+    def handleError(self, attrs):
+        for attr in attrs:
+            (type, val) = attr
+            if type == 'class' and val == 'errorlist':
+#                 print("There was an error.")
+                sys.exit(1)
+
+    # checks if a link is valid
+    def validLink(self, link):
+        return ('fakebook' in link) and (link not in traversed) and (link not in frontier_tracker)
+
 
 def readInitialLoginPage():
     # print('READING INITIAL LOGIN PAGE')
@@ -90,8 +82,9 @@ def readInitialLoginPage():
 def sendLoginRequest():
     global s
     s.close()
+    # re-establish connection
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(('www.3700.network', 80))
+    s.connect((HOST, PORT))
     cookie_str = cookieString()
     # get the csrf token
     csrf = ''
@@ -104,20 +97,13 @@ def sendLoginRequest():
           f'\r\nHost: www.3700.network\r\nContent-Type: application/x-www-form-urlencoded' \
           f'\r\nContent-Length: {cl}\r\n{cookie_str}\r\n\r\n' \
           f'username={username}&password={password}&csrfmiddlewaretoken={csrf}&next=/fakebook/'
-    # print(msg)
     request = bytes(msg, 'utf-8')
     s.sendall(request)
 
 # read one page (parsing the HTML)
-# - update header cookies for next request
-# - add new URLs to frontier_tracker
-# - if secret ticket is found, add to secret ticket list
 def readPage(result):
-    # print('\nREADING NEW PAGE')
-    # result = s.recv(DATA_SIZE)
     resStr = result.decode('utf-8')
     pageList = resStr.split('\r\n')
-    # print(pageList)
     header = makeHeaderList(pageList)
     handleCookies(header)
     handleStatusCode(header, pageList)
@@ -134,11 +120,11 @@ def makeHeaderList(pageList):
 
 # handle status code
 def handleStatusCode(header, pageList):
-    # create new socket connection
     global s
     s.close()
+    # create new socket connection
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(('www.3700.network', 80))
+    s.connect((HOST, PORT))
     statusCode = header[0]
     if '500' in statusCode:
         # resend same request
@@ -146,7 +132,7 @@ def handleStatusCode(header, pageList):
         s.sendall(request)
     elif '403' in statusCode or '404' in statusCode:
         # send next request
-        print('403 RETURNED')
+        # print('403 RETURNED')
         sendNextGetRequest()
     elif '302' in statusCode:
         # send same request with new given url
@@ -157,7 +143,6 @@ def handleStatusCode(header, pageList):
             if 'Location' in h:
                 loc = h
         loc = loc[10:]
-        # cookies.pop(-1)
         handleCookies(header)
         sendGetRequest(loc)
     elif '200' in statusCode:
@@ -186,7 +171,6 @@ def handleCookies(header):
             parsed_line = h.split(';')
             parsed_cookie = parsed_line[0].split(': ')
             cookies.append(parsed_cookie[1])
-    # printList('COOKIES', cookies)
 
 # get body and pass to HTML parser
 def parseHTML(pageList):
@@ -196,8 +180,7 @@ def parseHTML(pageList):
         if 'html' in i:
             body = i
             break
-    # print('\nBODY: ', body)
-    parser = MyHTMLParser()
+    parser = FakebookParser()
     parser.feed(body)
 
 # send GET request for next url in frontier_tracker
@@ -210,56 +193,47 @@ def sendNextGetRequest():
 def sendGetRequest(url):
     global request
     # make new request for given URL
-    parsed_url = url.split('www.3700.network')
+    parsed_url = url.split(HOST)
     subdir = parsed_url[-1]
     # (Host, Content-Length, Content-Type, Cookie and the data to be sent)
     request_type = f'GET {subdir} HTTP/1.1\r\n'
     host = 'Host: www.3700.network\r\n'
+    connection = 'Connection: keep-alive\r\n'
     content_length = 'Content-Length: 0\r\n'
-    # content_type = 'Content-Type: text/html; charset=utf-8\r\n'
     content_type = 'Content-Type: application/x-www-form-urlencoded\r\n'
     cookie = cookieString()
-    msg = ''
-    msg += request_type
-    msg += host
+    msg = request_type + host + connection + cookie + '\r\n\r\n'
     # msg += content_length
     # msg += content_type
-    msg += cookie
-    msg += '\r\n\r\n'
-    # print('MSG: ')
-    # print(msg)
     # SEND GET REQUEST
     request = bytes(msg, 'utf-8')
     s.sendall(request)
-    print(url)
-    # print('sent')
-    # add traversed url to traversed
+#     print(url)
+    # add traversed url to traversed to prevent recursion
     traversed.append(url)
 
+# RUN PROGRAM
 start = datetime.datetime.now()
-print(start)
-# make initial request
+# print("Start Time: ", start)
+# set up network connection
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(('www.3700.network', 80))
-s.sendall(request)
-# read initial response
-readInitialLoginPage()
-# send login request
-sendLoginRequest()
-# start running readPage
-result = s.recv(DATA_SIZE)
-count = 0
+s.connect((HOST, PORT))
+s.sendall(request) # make initial request
+readInitialLoginPage() # read initial response
+sendLoginRequest() # send login request
+result = s.recv(DATA_SIZE) # start running readPage
+
+# Best Time: ~4 minutes
 while result:
     readPage(result)
     if len(flags) >= 5:
-        printList('FLAGS', flags)
+        print(str(flags))
         end = datetime.datetime.now()
-        print(end)
-        print((end - start).total_seconds())
+#         print("End Time: ", end)
+#         print("Total Time: ", (end - start).total_seconds())
         sys.exit(0)
     else:
         result = s.recv(DATA_SIZE)
-        count+=1
-        # print(count)
-        print(flags)
-
+        url_count += 1
+#         print("Url count: " + str(url_count))
+#         print("Flags: " + str(flags))
