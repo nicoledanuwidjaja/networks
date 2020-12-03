@@ -1,8 +1,12 @@
 # Project 5: Web Crawler
 
 ### Approach
+For our web crawler, we worked on implementing our own HTTP requests and responses from scratch. First, we created a POST request that logged into the Fakebook server with our credentials and stored a session cookie. 
+
+As part of our implementation, we built a custom header for each request and parsed the responses in order to extract necessary session cookies. We created a GET request that would use this session cookie and crawl through the data using our implementation of the HTTPParser class. In order to crawl each page, we scraped the links found on the page, and parsed through the content to find any flags. Then, we stored links found in our frontier tracker, represented as a deque to store untraversed URLs. The deque stores the order of these references and pops off the next link to visit the corresponding page. This process continues until the frontier tracker is empty or if all five flags have been found. 
 
 ### Challenges
+Initially creating the structure of the headers and the requests was challenging, but after we figured out how to structure the POST and GET requests, we were able to use the HTTPParser class to parse through the data. Other challenges were ensuring that the socket connection would not time out, as well as handling the different response code cases.
 
 ## Details
 Implement a web crawler that gathers data from Fakebook. A web crawler (robot, spider, scraper) is a piece of software that automatically gathers and traverses documents on the web. Web crawlers are a fundamental component of today's web.
