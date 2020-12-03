@@ -78,6 +78,11 @@ def readInitialLoginPage():
     result = s.recv(DATA_SIZE)
     resStr = result.decode('utf-8')
     pageList = resStr.split('\r\n')
+    while '403' in pageList[0] or '404' in pageList[0]:
+        s.sendall(request)
+        result = s.recv(DATA_SIZE)
+        resStr = result.decode('utf-8')
+        pageList = resStr.split('\r\n')
     header = makeHeaderList(pageList)
     # print('200 RETURNED')
     handleCookies(header)

@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+
+import sys, socket, select, time, json, random
+
+# Your ID number
+my_id = sys.argv[1]
+
+# The ID numbers of all the other replicas
+replica_ids = sys.argv[2:]
+
+# Connect to the network. All messages to/from other replicas and clients will
+# occur over this socket
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+sock.connect(my_id)
+
+# leader id
+leader = "FFFF"
+
+# database dictionary
+db = {}
+
+
+last = 0
+
+
+# return associated value with given key if it exists, else return an empty string
+def findVal(key):
+	val = db.get(key)
+	return val if val else ""
+
+# GET MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "get", "MID": "<a unique string>",
+# "key": "<some key>"}
+
+# OK GET MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "ok", "MID": "<a unique string>",
+# "value": "<value of the key>"}
+def okGet(msg):
+	ok = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "ok", "MID": msg['MID'],
+		  "value": findVal(msg['key'])}
+	okjson = json.dumps(ok)
+	sock.sendall(okjson)
+
+# FAIL GET MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "fail", "MID": "<a unique string>"}
+def failGet(msg):
+	fail = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "fail", "MID": msg['MID']}
+	failjson = json.dumps(fail)
+	sock.sendall(failjson)
+
+# PUT MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "put", "MID": "<a unique string>",
+# "key": "<some key>", "value": "<value of the key>"}
+
+# OK PUT MSG
+
+
+# FAIL PUT MSG
+
+while True:
+	ready = select.select([sock], [], [], 0.1)[0]
+	
+	if sock in ready:
+		msg_raw = sock.recv(32768)
+		
+		if len(msg_raw) == 0: continue
+		msg = json.loads(msg_raw)
+		
+		# For now, ignore get() and put() from clients
+		if msg['type'] in ['get', 'put']:
+                        pass
+		
+		# Handle noop messages. This may be removed from your final implementation
+		elif msg['type'] == 'noop':
+			print '%s received a NOOP from %s' % (msg['dst'], msg['src'])
+		
+	clock = time.time()
+	if clock-last > 2:
+		# Send a no-op message to a random peer every two seconds, just for fun
+		# You definitely want to remove this from your implementation
+		msg = {'src': my_id, 'dst': random.choice(replica_ids), 'leader': 'FFFF', 'type': 'noop'}
+		sock.send(json.dumps(msg))
+		print '%s sending a NOOP to %s' % (msg['src'], msg['dst'])
+		last = clock
