@@ -28,6 +28,11 @@ def findVal(key):
 	val = db.get(key)
 	return val if val else ""
 
+# turn given dictionary into json, and send through socket
+def sendDict(msg):
+	msgjson = json.dumps(msg)
+	sock.sendall(msgjson)
+
 # GET MSG
 # {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "get", "MID": "<a unique string>",
 # "key": "<some key>"}
@@ -38,24 +43,35 @@ def findVal(key):
 def okGet(msg):
 	ok = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "ok", "MID": msg['MID'],
 		  "value": findVal(msg['key'])}
-	okjson = json.dumps(ok)
-	sock.sendall(okjson)
+	sendDict(ok)
 
 # FAIL GET MSG
 # {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "fail", "MID": "<a unique string>"}
 def failGet(msg):
 	fail = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "fail", "MID": msg['MID']}
-	failjson = json.dumps(fail)
-	sock.sendall(failjson)
+	sendDict(fail)
 
 # PUT MSG
 # {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "put", "MID": "<a unique string>",
 # "key": "<some key>", "value": "<value of the key>"}
 
 # OK PUT MSG
-
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "ok", "MID": "<a unique string>"}
+def okPut(msg):
+	ok = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "ok", "MID": msg['MID']}
+	sendDict(ok)
 
 # FAIL PUT MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "fail", "MID": "<a unique string>"}
+def failPut(msg):
+	fail = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "fail", "MID": msg['MID']}
+	sendDict(fail)
+
+# REDIRECT MSG
+# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "redirect", "MID": "<a unique string>"}
+def redirect(msg):
+	redir = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "redirect", "MID": msg['MID']}
+	sendDict(redir)
 
 while True:
 	ready = select.select([sock], [], [], 0.1)[0]
