@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, socket, select, time, json, random
+import sys, socket, select, time, json, random, math
 
 # Your ID number
 my_id = sys.argv[1]
@@ -13,15 +13,116 @@ replica_ids = sys.argv[2:]
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
 sock.connect(my_id)
 
-# leader id
-leader = "FFFF"
-
-# database dictionary
-db = {}
-
-
 last = 0
 
+# I MADE LAST LOG INDEX = LAST_APPLIED BUT IDK IF IT SHOULD BE THIS OR COMMIT_INDEX
+
+# PERSISTENT STATE ON ALL SERVERS
+# (Updated on stable storage before responding to RPCs)
+# latest term server has seen (initialized to 0
+# on first boot, increases monotonically)
+CURRENT_TERM = 0
+# candidateId that received vote in current
+# term (or null if none)
+VOTED_FOR = None
+# log entries; each entry contains command
+# for state machine, and term when entry
+# was received by leader (first index is 1)
+LOG = []
+# index of highest log entry known to be
+# committed (initialized to 0, increases
+# monotonically)
+
+# VOLATILE STATE ON ALL SERVERS
+# index of highest log entry known to be
+# committed (initialized to 0, increases
+# monotonically)
+COMMIT_INDEX = 0
+# index of highest log entry applied to state
+# machine (initialized to 0, increases
+# monotonically)
+LAST_APPLIED = 0
+
+# VOLATILE STATE ON LEADERS
+# (reinitialized after election)
+# for each server, index of the next log entry
+# to send to that server (initialized to leader
+# last log index + 1)
+NEXT_INDEX = {} # used dictionary instead of array
+# for each server, index of highest log entry
+# known to be replicated on server
+# (initialized to 0, increases monotonically)
+MATCH_INDEX = {} # used dictionary instead of array
+
+# EXTRA GLOBAL VARIABLES WE MIGHT NEED
+# leader id
+LEADER_ID = "FFFF"
+STATUS = {} # STATUS = {'isLeader': False, 'status': 'follower', 'term': 1, 'votes': 0}
+QUORUM = math.ceil(len(replica_ids) / 2)
+PREV_LOG_INDEX = 0
+ELECTION_TIMEOUT = 10
+
+# initializes status of my server
+def initializeServer():
+	global STATUS
+	STATUS = {'isLeader': False, 'status': 'follower', 'term': 1, 'votes': 0}
+
+# begins the election (vote for myself and send requestVote RPC to all other servers)
+def beginElection():
+	STATUS['votes'] = 1
+	sendRequestVoteRPCs()
+
+# if last log index >= nextIndex for a follower: send AppendEntriesRPC with
+# log entries starting at nextIndex
+def sendAppendEntriesRPC():
+	for rid in replica_ids:
+		# TODO
+		if LAST_APPLIED >
+
+
+# sends RequestVoteRPCs to all servers
+def sendRequestVoteRPCs():
+	# TODO
+	request_vote = {'term': CURRENT_TERM, 'candidateId': my_id, 'lastLogIndex': LAST_APPLIED, 'lastLogTerm': LOG[LAST_APPLIED]['term']}
+	sendDict(request_vote)
+
+# receive RequestVoteRPCs from other servers
+def recvRequestVoteRPCs(msg):
+	candidate_term = msg['term']
+	if candidate_term < CURRENT_TERM:
+		response = {'term': CURRENT_TERM, 'voteGranted': False}
+	# TODO
+	elif not VOTED_FOR or VOTED_FOR == msg['candidateId'] and msg['lastLogIndex'] >= LAST_APPLIED and msg['lastLogTerm'] >= LOG[LAST_APPLIED]['term']:
+		response = {'term': candidate_term, 'voteGranted': True}
+	else:
+		# not sure if we're supposed to be sending a response still, but that's what I'm doing for now
+		response = {'term': CURRENT_TERM, 'voteGranted': False}
+	sendDict(response)
+
+# handle response from other servers of my RequestVoteRPC
+def requestVoteRPCHandleResult(msg):
+	if msg['voteGranted']:
+		STATUS['votes']+=1
+
+	if STATUS['votes'] >= QUORUM:
+		STATUS['isLeader'] = True
+		reinitializeLeaderStates()
+		broadcastHeartbeat()
+
+# reinitialize global variable states for leaders
+def reinitializeLeaderStates():
+	for rid in replica_ids:
+		# TODO
+		NEXT_INDEX[rid] = LAST_APPLIED + 1
+		MATCH_INDEX[rid] = 0
+
+# send empty AppendEntriesRPC to all servers
+# 1) used to establish its authority and prevent new elections upon winning an election
+# 2) used to maintain leadership to prevent election timeouts
+def broadcastHeartbeat():
+	append_entries = {'term': CURRENT_TERM, 'leaderId': my_id, 'prevLogIndex': PREV_LOG_INDEX,
+					  'prevLogTerm': LOG[PREV_LOG_INDEX]['term'], 'entries': [], 'leaderCommit': COMMIT_INDEX}
+	sendDict(append_entries)
 
 # return associated value with given key if it exists, else return an empty string
 def findVal(key):
@@ -38,17 +139,14 @@ def sendDict(msg):
 # "key": "<some key>"}
 
 # OK GET MSG
-# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "ok", "MID": "<a unique string>",
-# "value": "<value of the key>"}
 def okGet(msg):
-	ok = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "ok", "MID": msg['MID'],
+	ok = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "ok", "MID": msg['MID'],
 		  "value": findVal(msg['key'])}
 	sendDict(ok)
 
 # FAIL GET MSG
-# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "fail", "MID": "<a unique string>"}
 def failGet(msg):
-	fail = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "fail", "MID": msg['MID']}
+	fail = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "fail", "MID": msg['MID']}
 	sendDict(fail)
 
 # PUT MSG
@@ -56,22 +154,28 @@ def failGet(msg):
 # "key": "<some key>", "value": "<value of the key>"}
 
 # OK PUT MSG
-# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "ok", "MID": "<a unique string>"}
 def okPut(msg):
-	ok = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "ok", "MID": msg['MID']}
+	ok = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "ok", "MID": msg['MID']}
 	sendDict(ok)
 
 # FAIL PUT MSG
-# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "fail", "MID": "<a unique string>"}
 def failPut(msg):
-	fail = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "fail", "MID": msg['MID']}
+	fail = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "fail", "MID": msg['MID']}
 	sendDict(fail)
 
 # REDIRECT MSG
-# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "redirect", "MID": "<a unique string>"}
 def redirect(msg):
-	redir = {"src": msg['dst'], "dst": msg['src'], "leader": leader, "type": "redirect", "MID": msg['MID']}
+	redir = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "redirect", "MID": msg['MID']}
 	sendDict(redir)
+
+
+# implementing RAFT election protocol
+
+# remote procedure calls
+# REQUEST VOTE: initiated by candidates during elections
+# APPEND ENTRIES:  initiated by leaders to replicate log entries and to provide a form of heartbeat
+# ** Servers retry RPCs if they do not receive a response in a timely manner, and they issue RPCs in parallel
+# for best performance. **
 
 while True:
 	ready = select.select([sock], [], [], 0.1)[0]
@@ -83,9 +187,11 @@ while True:
 		msg = json.loads(msg_raw)
 		
 		# For now, ignore get() and put() from clients
-		if msg['type'] in ['get', 'put']:
-                        pass
-		
+		if msg['type'] in 'get':
+			failGet(msg)
+		elif msg['type'] in 'put':
+			failPut(msg)
+
 		# Handle noop messages. This may be removed from your final implementation
 		elif msg['type'] == 'noop':
 			print '%s received a NOOP from %s' % (msg['dst'], msg['src'])
