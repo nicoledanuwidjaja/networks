@@ -424,7 +424,7 @@ class Simulation:
             r.run(self.rids, self.silence)
 
         # sleep for a second to allow all spawned sub-processes to connect/perform initialization
-        time.sleep(1)
+        #time.sleep(1)
         
         # initialize the clock and create all the get(), put(), and kill() events
         clock = start = time.time()
@@ -675,6 +675,9 @@ class Simulation:
         if self.stats.died:
             # Replicas may not crash
             if verbose: fail('\tError: >0 replicas died unexpectedly')
+            passed = False
+        if sum(len(c.items) for c in self.clients.values()) == 0:
+            if verbose: fail('\tError: No state stored in replicas')
             passed = False
         if self.stats.unanswered_get > self.stats.generated_get * self.conf.max_get_frac:
             # Your system must answer a minimal number of get requests from clients
