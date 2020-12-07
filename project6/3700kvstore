@@ -20,7 +20,8 @@ class RaftServer:
 		########################################################
 		# STATE VARIABLES
 		########################################################
-		# PERSISTENT STATE ON ALL SERVERS
+
+		### PERSISTENT STATE ON ALL SERVERS
 		# (Updated on stable storage before responding to RPCs)
 		# latest term server has seen (initialized to 0
 		# on first boot, increases monotonically)
@@ -33,7 +34,7 @@ class RaftServer:
 		# was received by leader (first index is 1)
 		self.LOG = [] # { (term, command) }
 
-		# VOLATILE STATE ON ALL SERVERS
+		### VOLATILE STATE ON ALL SERVERS
 		# index of highest log entry known to be
 		# committed (initialized to 0, increases
 		# monotonically)
@@ -43,7 +44,7 @@ class RaftServer:
 		# monotonically)
 		self.LAST_APPLIED = 0
 
-		# VOLATILE STATE ON LEADERS
+		### VOLATILE STATE ON LEADERS
 		# (reinitialized after election)
 		# for each server, index of the next log entry
 		# to send to that server (initialized to leader
@@ -114,38 +115,38 @@ class RaftServer:
 		# handle response from other servers of my RequestVoteRPC
 		def requestVoteRPCHandleResult(msg):
 			if msg['voteGranted']:
-				STATUS['votes']+=1
+				self.STATUS['votes']+=1
 
-			if STATUS['votes'] >= QUORUM:
-				STATUS['isLeader'] = True
+			if self.STATUS['votes'] >= QUORUM:
+				self.STATUS['isLeader'] = True
 				reinitializeLeaderStates()
 				broadcastHeartbeat()
 
 		# reinitialize global variable states for leaders
 		def reinitializeLeaderStates():
-			for rid in replica_ids:
+			for rid in self.replica_ids:
 				# TODO
-				NEXT_INDEX[rid] = LAST_APPLIED + 1
-				MATCH_INDEX[rid] = 0
+				self.NEXT_INDEX[rid] = self.LAST_APPLIED + 1
+				self.MATCH_INDEX[rid] = 0
 
 		# send empty AppendEntriesRPC to all servers
 		# 1) used to establish its authority and prevent new elections upon winning an election
 		# 2) used to maintain leadership to prevent election timeouts
 		def broadcastHeartbeat():
-			append_entries = {'term': CURRENT_TERM, 'leaderId': my_id, 'prevLogIndex': PREV_LOG_INDEX,
-							  'prevLogTerm': LOG[PREV_LOG_INDEX]['term'], 'entries': [], 'leaderCommit': COMMIT_INDEX}
+			append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
+							  'prevLogTerm': self.LOG[self.PREV_LOG_INDEX]['term'], 'entries': [], 'leaderCommit': self.COMMIT_INDEX}
 			sendDict(append_entries)
 
 		# return associated value with given key if it exists, else return an empty string
 		def findVal(key):
-			val = db.get(key)
+			val = db.get(key) # what is this?
 			return val if val else ""
 
 		# turn given dictionary into json, and send through socket
 		def sendDict(msg):
 			msgjson = json.dumps(msg)
 			print(msgjson)
-			sock.sendall(msgjson)
+			self.sock.sendall(msgjson)
 
 		# GET MSG
 		# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "get", "MID": "<a unique string>",
@@ -153,13 +154,13 @@ class RaftServer:
 
 		# OK GET MSG
 		def okGet(msg):
-			ok = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "ok", "MID": msg['MID'],
+			ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID'],
 				  "value": findVal(msg['key'])}
 			sendDict(ok)
 
 		# FAIL GET MSG
 		def failGet(msg):
-			fail = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "fail", "MID": msg['MID']}
+			fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
 			sendDict(fail)
 
 		# PUT MSG
@@ -168,17 +169,17 @@ class RaftServer:
 
 		# OK PUT MSG
 		def okPut(msg):
-			ok = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "ok", "MID": msg['MID']}
+			ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
 			sendDict(ok)
 
 		# FAIL PUT MSG
 		def failPut(msg):
-			fail = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "fail", "MID": msg['MID']}
+			fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
 			sendDict(fail)
 
 		# REDIRECT MSG
 		def redirect(msg):
-			redir = {"src": msg['dst'], "dst": msg['src'], "leader": LEADER_ID, "type": "redirect", "MID": msg['MID']}
+			redir = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect", "MID": msg['MID']}
 			sendDict(redir)
 
 
@@ -191,10 +192,10 @@ class RaftServer:
 		# for best performance. **
 
 		while True:
-			ready = select.select([sock], [], [], 0.1)[0]
+			ready = select.select([self.sock], [], [], 0.1)[0]
 
-			if sock in ready:
-				msg_raw = sock.recv(32768)
+			if self.sock in ready:
+				msg_raw = self.sock.recv(32768)
 
 				if len(msg_raw) == 0: continue
 				msg = json.loads(msg_raw)
@@ -213,7 +214,7 @@ class RaftServer:
 			if clock-last > 2:
 				# Send a no-op message to a random peer every two seconds, just for fun
 				# You definitely want to remove this from your implementation
-				msg = {'src': my_id, 'dst': random.choice(replica_ids), 'leader': 'FFFF', 'type': 'noop'}
-				sock.send(json.dumps(msg))
+				msg = {'src': self.my_id, 'dst': random.choice(self.replica_ids), 'leader': 'FFFF', 'type': 'noop'}
+				self.sock.send(json.dumps(msg))
 				print '%s sending a NOOP to %s' % (msg['src'], msg['dst'])
 				last = clock
