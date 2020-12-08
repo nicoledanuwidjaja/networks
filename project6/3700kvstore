@@ -66,13 +66,18 @@ class RaftServer:
 
         # ELECTION VARIABLES
         self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
-        self.LAST_UPDATED_TIME = time.time()  # timeout purposes
+        self.LAST_UPDATED_TIME = int(round(time.time() * 1000))  # timeout purposes
         #######################################################
         self.QUORUM = math.ceil(len(self.replica_ids) / 2)
 
+    # turn time into miliseconds
+    def getTime(self, time):
+        return int(round(time * 1000))
+
     # check if election timeout has occurred
     def electionTimeout(self):
-        return (time.time() - self.LAST_UPDATED_TIME) > self.ELECTION_TIMEOUT
+        diff = (self.getTime(time.time()) - self.LAST_UPDATED_TIME) > self.ELECTION_TIMEOUT
+        return diff
 
     # initializes status of a server
     def initializeServer(self):
@@ -93,7 +98,7 @@ class RaftServer:
     # TODO: i think i was wrong and we just need to send it once and it gets "sent in parallel"
     # replicates log entries and send heartbeat to followers
     def sendAppendEntriesRPC(self):
-        append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+        append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leaderId':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
                           'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
                           'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
 
@@ -116,8 +121,7 @@ class RaftServer:
 
     # FOLLOWER
     def recvAppendEntriesRPC(self, msg):
-        if msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == \
-                msg['prevLogTerm']:
+        if msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
             if not msg['entries']:
                 self.LEADER_ID = msg['leaderId']
                 self.STATUS['status'] = "follower"
@@ -125,7 +129,7 @@ class RaftServer:
                 self.STATUS['votes'] = 0
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
-            response = {'term': self.CURRENT_TERM, 'success': successful}
+            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
 
     # FOLLOWER
     #  If an existing entry conflicts with a new one (same index
@@ -178,25 +182,26 @@ class RaftServer:
     # CANDIDATE
     # sends RequestVoteRPCs to all servers during an election
     def sendRequestVoteRPCs(self):
+        for e in self.replica_ids:
         # if the vote is in 'term' and is for the 'candidateId', then we sendDict
-        request_vote = {'term': self.CURRENT_TERM, 'candidateId': self.my_id, 'lastLogIndex': self.LAST_COMMITED,
-                        'lastLogTerm': self.LOG[self.LAST_COMMITED]['term']}
-        self.sendDict(request_vote)
+            request_vote = {"src": self.my_id, "dst": e, "leader": self.LEADER_ID, "type": 'requestVoteRPC', 'term': self.CURRENT_TERM, 'candidateId': self.my_id, 'lastLogIndex': self.COMMIT_INDEX,
+                            'lastLogTerm': self.CURRENT_TERM - 1}
+            self.sendDict(request_vote)
 
     # receive RequestVoteRPCs from other servers
     def recvRequestVoteRPCs(self, msg):
         candidate_term = msg['term']
         # Reply false if term < currentTerm (5.1)
         if candidate_term < self.CURRENT_TERM:
-            response = {'term': self.CURRENT_TERM, 'voteGranted': False}
+            response = {"src": self.my_id, "dst": msg['src'], "leader": self.LEADER_ID, 'type':'responseRequestVoteRPC',  'term': self.CURRENT_TERM, 'voteGranted': False}
 
         elif not self.VOTED_FOR or self.VOTED_FOR == msg['candidateId'] and msg[
-            'lastLogIndex'] >= self.LAST_COMMITED and msg['lastLogTerm'] >= self.LOG[self.LAST_COMMITED]['term']:
-            response = {'term': candidate_term, 'voteGranted': True}
+            'lastLogIndex'] >= self.COMMIT_INDEX and msg['lastLogTerm'] >= self.LOG[self.COMMIT_INDEX]['term']:
+            response = {'src':self.my_id, 'dst': msg['src'], 'leader': self.LEADER_ID, 'type':'responseRequestVoteRPC','term': candidate_term, 'voteGranted': True}
             self.VOTED_FOR = msg['candidateId']
         else:
             # not sure if we're supposed to be sending a response still, but that's what I'm doing for now
-            response = {'term': self.CURRENT_TERM, 'voteGranted': False}
+            response = {'src':self._id, 'dst':msg['src'], 'leader':self.LEADER_ID, 'type':'responseRequestVoteRPC', 'term': self.CURRENT_TERM, 'voteGranted': False}
         self.sendDict(response)
 
     # handle response from other servers of my RequestVoteRPC
@@ -213,7 +218,7 @@ class RaftServer:
     # reinitialize global variable states for leaders
     def reinitializeLeaderStates(self):
         for rid in self.replica_ids:
-            self.NEXT_INDEX[rid] = self.LAST_COMMITED + 1
+            self.NEXT_INDEX[rid] = self.COMMIT_INDEX + 1
             self.MATCH_INDEX[rid] = 0
 
     # LEADER
@@ -221,10 +226,11 @@ class RaftServer:
     # 1) used to establish its authority and prevent new elections upon winning an election
     # 2) used to maintain leadership to prevent election timeouts
     def broadcastHeartbeat(self):
-        append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
-                          'prevLogTerm': self.LOG[self.PREV_LOG_INDEX]['term'], 'entries': [],
-                          'leaderCommit': self.COMMIT_INDEX}
-        self.sendDict(append_entries)
+        for e in self.replica_ids:
+            append_entries = {'src': self.my_id, 'dst':e, 'leader': self.my_id, 'type': 'broadcastheartbeat','term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
+                              'prevLogTerm': self.CURRENT_TERM - 1, 'entries': [],
+                              'leaderCommit': self.COMMIT_INDEX}
+            self.sendDict(append_entries)
 
     # return associated value with given key if it exists, else return an empty string
     # TODO: this is for "If the client issues a get() for a key that has does not exist (i.e. it was never put()), your datastore should return an empty value (i.e. an empty string)."
