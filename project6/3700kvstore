@@ -342,7 +342,7 @@ while True:
 
 	if server.sock in ready:
 		msg_raw = server.sock.recv(32768)
-
+		server.initializeServer()
 		if server.electionTimeout():
 			server.beginElection()
 
