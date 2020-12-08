@@ -36,8 +36,8 @@ class RaftServer:
 		# log entries; each entry contains command
 		# for state machine, and term when entry
 		# was received by leader (first index is 1)
-		self.LOG = [] # { (term, command ***the command should be the msg sent by client to leader,
-		# so followers can also update their KEY_VALUE dictionary)) }
+		self.LOG = [] # { (index, term, command ***the command should be the msg sent by client to leader,
+		# so followers can also update their KEY_VALUE dictionary) }
 
 		### VOLATILE STATE ON ALL SERVERS
 		# index of highest log entry known to be
@@ -116,18 +116,35 @@ class RaftServer:
 					self.STATUS['status'] = "follower"
 					self.STATUS['isLeader'] = False
 					self.STATUS['votes'] = 0
-				updateLog()
+				successful = updateLogFollower(msg)
 				updateCommitIndex(msg)
-				response = {'term': self.CURRENT_TERM, 'success': True}
+				response = {'term': self.CURRENT_TERM, 'success': successful}
 
-		def updateLog(msg):
-			# FOLLOWER
-				#  If an existing entry conflicts with a new one (same index
-				# but different terms), delete the existing entry and all that
-				# follow it (§5.3)
-				# Append any new entries not already in the log
-			# LEADER
-				# update log after receving a command from a client
+		# FOLLOWER
+		#  If an existing entry conflicts with a new one (same index
+		# but different terms), delete the existing entry and all that
+		# follow it (5.3)
+		# Append any new entries not already in the log
+		# msg = AppendEntriesRPC
+		# return whether to respond success or not
+		def updateLogFollower(msg):
+			idx = msg['prevLogIndex']
+			self.LOG = self.LOG[:idx]
+			self.LOG.extend(msg['entries'])
+			for e in msg['entries']:
+				if e['command']['type'] == 'put':
+					updateKeyValue(e['command'])
+			if self.LOG[idx]['term'] != msg['prevLogTerm']:
+				return False
+			else:
+				return True
+
+
+		# LEADER
+		# update log after receving a command from a client
+		# msg = client request
+		def updateLogLeader(msg):
+			self.LOG.append({'index': self.NEXT_INDEX, 'term': self.CURRENT_TERM, 'command': msg})
 
 		# LEADER
 		# handle responses to my appendEntriesRPC (if i am leader)
@@ -140,7 +157,10 @@ class RaftServer:
 				if self.NUM_SUCCESSES >= QUORUM:
 					self.NUM_SUCCESSES = 0
 					updateCommitIndex(msg)
-					okGet()
+					okGet(self.LOG[self.LAST_APPLIED]['command'])
+			else:
+				self.NEXT_INDEX -=1
+				sendAppendEntriesRPC()
 
 		# FOLLOWER: making sure that my COMMIT_INDEX is as great as the leader's
 		# LEADER: updating my COMMIT_INDEX after receiving quorum of successful replica responses
@@ -158,11 +178,10 @@ class RaftServer:
 		# receive RequestVoteRPCs from other servers
 		def recvRequestVoteRPCs(msg):
 			candidate_term = msg['term']
-			# Reply false if term < currentTerm (§5.1)
+			# Reply false if term < currentTerm (5.1)
 			if candidate_term < self.CURRENT_TERM:
 				response = {'term': self.CURRENT_TERM, 'voteGranted': False}
-			#  If votedFor is null or candidateId, and candidate’s log is at
-			# least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
+
 			elif not self.VOTED_FOR or self.VOTED_FOR == msg['candidateId'] and msg['lastLogIndex'] >= self.LAST_COMMITED and msg['lastLogTerm'] >= self.LOG[self.LAST_COMMITED]['term']:
 				response = {'term': candidate_term, 'voteGranted': True}
 				self.VOTED_FOR = msg['candidateId']
@@ -223,9 +242,9 @@ class RaftServer:
 			if not self.STATUS['isLeader']:
 				redirect(msg)
 			# LEADER
-			else if notFailed(): # TODO: confused about when one would fail tho
-				updateLog(msg)
-				updateKeyValue(msg)
+			# else if notFailed(): # TODO: confused about when one would fail tho
+			else:
+				updateLogLeader(msg)
 				sendAppendEntriesRPC()
 
 		# LEADER
@@ -246,6 +265,15 @@ class RaftServer:
 		# "key": "<some key>", "value": "<value of the key>"}
 
 		def handlePutMsg():
+			# FOLLOWER
+			if not self.STATUS['isLeader']:
+				redirect(msg)
+			# LEADER
+			# else if notFailed(): # TODO: confused about when one would fail tho
+			else:
+				updateLogLeader(msg)
+				updateKeyValue(msg)
+				sendAppendEntriesRPC()
 
 		# LEADER
 		# OK PUT MSG
@@ -270,7 +298,7 @@ class RaftServer:
 		# THE 2 METHODS BELOW: literally implmenenting the All Servers section of the Rules for Servers in RAFT protocol
 
 		# If RPC request or response contains term T > currentTerm:
-		# set currentTerm = T, convert to follower (§5.1)
+		# set currentTerm = T, convert to follower (5.1)
 		def termCheck(msg):
 			if msg['term'] > self.CURRENT_TERM:
 				self.CURRENT_TERM = msg['term']
@@ -278,7 +306,7 @@ class RaftServer:
 				self.STATUS['isLeader'] = False
 
 		# If commitIndex > lastApplied: increment lastApplied, apply
-		# log[lastApplied] to state machine (§5.3)
+		# log[lastApplied] to state machine (5.3)
 		def compareCommitAndApplied():
 			if self.COMMIT_INDEX > self.LAST_APPLIED:
 				self.LAST_APPLIED += 1
@@ -312,10 +340,10 @@ class RaftServer:
 				if msg['type'] in 'get' or msg['type'] in 'put':
 					# if I am leader and client sent a "get" msg
 					if self.STATUS['isLeader'] and msg['type'] in 'get':
-						okGet(msg)
+						handleGetMsg(msg)
 					# if I am leader and client sent a "put" msg
 					elif self.STATUS['isLeader'] and msg['type'] in 'put':
-						okPut(msg)
+						handlePutMsg(msg)
 					# if I am leader and client sent a "get" or "put" msg
 					elif not self.STATUS['isLeader'] and msg['type'] in 'get' or msg['type'] in 'put':
 						redirect(msg)
