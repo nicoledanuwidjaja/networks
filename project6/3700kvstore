@@ -128,10 +128,16 @@ class RaftServer:
             self.STATUS['status'] = 'follower'
             self.STATUS['isLeader'] = False
             self.STATUS['votes'] = 0
+            successful = self.updateLogFollower(msg)
+            self.updateCommitIndex(msg)
+            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
+            sendDict(response)
         elif msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
             response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
+            sendDict(response)
+        self.LAST_UPDATED_TIME = int(round(time.time() * 1000))
 
     # FOLLOWER
     #  If an existing entry conflicts with a new one (same index
@@ -199,11 +205,11 @@ class RaftServer:
 
         elif not self.VOTED_FOR or self.VOTED_FOR == msg['candidateId'] and msg[
             'lastLogIndex'] >= self.COMMIT_INDEX and msg['lastLogTerm'] >= self.LOG[self.COMMIT_INDEX]['term']:
-            response = {'src':self.my_id, 'dst': msg['src'], 'leader': self.LEADER_ID, 'type':'responseRequestVoteRPC','term': candidate_term, 'voteGranted': True}
+            response = {'src':self.my_id, 'dst': msg['src'], 'leader': self.LEADER_ID, 'type':'responseRequestVoteRPC','term': self.CURRENT_TERM, 'voteGranted': True}
             self.VOTED_FOR = msg['candidateId']
         else:
             # not sure if we're supposed to be sending a response still, but that's what I'm doing for now
-            response = {'src':self._id, 'dst':msg['src'], 'leader':self.LEADER_ID, 'type':'responseRequestVoteRPC', 'term': self.CURRENT_TERM, 'voteGranted': False}
+            response = {'src':self.my_id, 'dst':msg['src'], 'leader':self.LEADER_ID, 'type':'responseRequestVoteRPC', 'term': self.CURRENT_TERM, 'voteGranted': False}
         self.sendDict(response)
 
     # handle response from other servers of my RequestVoteRPC
@@ -357,6 +363,8 @@ while True:
 		if server.electionTimeout():
 			server.beginElection()
 
+                if server.STATUS['isLeader']:
+                    server.broadcastHeartbeat()
 		# first check if my COMMIT_INDEX and LAST_APPLIED are in sync
 		server.compareCommitAndApplied()
 
