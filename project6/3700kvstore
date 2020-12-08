@@ -256,9 +256,9 @@ class RaftServer:
 			elif self.STATUS['isLeader']:
 				self.updateLogLeader(msg)
 				self.sendAppendEntriesRPC()
-			else:
-				# TODO: confused about when one would fail tho
-				# uh oh, me too
+			# else:
+			# 	# TODO: confused about when one would fail tho
+			# 	# uh oh, me too
 
 		# LEADER
 		# OK GET MSG
@@ -286,9 +286,9 @@ class RaftServer:
 				self.updateLogLeader(msg)
 				self.updateKeyValue(msg)
 				self.sendAppendEntriesRPC()
-			else:
-				# TODO: confused about when one would fail tho
-				# me too, so I just made a case where it's like neither follower or leader
+			# else:
+			# 	# TODO: confused about when one would fail tho
+			# 	# me too, so I just made a case where it's like neither follower or leader
 
 		# LEADER
 		# OK PUT MSG
@@ -389,7 +389,7 @@ class RaftServer:
 			# 	msg = {'src': self.my_id, 'dst': random.choice(self.replica_ids), 'leader': 'FFFF', 'type': 'noop'}
 			# 	self.sock.send(json.dumps(msg))
 			# 	print '%s sending a NOOP to %s' % (msg['src'], msg['dst'])
-			# 	last = clock
+			# 	last = clock;
 
 # Your ID number = sys.argv[1]
 # The ID numbers of all th,""other replicas = sys.argv[2:]
