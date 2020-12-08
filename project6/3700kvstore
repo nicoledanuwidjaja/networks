@@ -4,6 +4,7 @@ import sys, socket, select, time, json, random, math
 
 # TODO: im confused about when to send 'fail' responses to clients
 # TODO: LOG ENTRY STUFF
+# my git stuff is being dumb
 
 # seemed like a class approach would be nicer to store all the state stuff!
 class RaftServer:
@@ -71,325 +72,325 @@ class RaftServer:
 
         QUORUM = math.ceil(len(self.replica_ids) / 2)
 
-		# check if election timeout has occurred
-		def electionTimeout(self):
-			return (time.time() - self.LAST_UPDATED_TIME) > self.ELECTION_TIMEOUT
+	# check if election timeout has occurred
+	def electionTimeout(self):
+		return (time.time() - self.LAST_UPDATED_TIME) > self.ELECTION_TIMEOUT
 
-		# initializes status of a server
-		def initializeServer(self):
-			self.STATUS = {'isLeader': False, 'status': 'follower', 'votes': 0}
+	# initializes status of a server
+	def initializeServer(self):
+		self.STATUS = {'isLeader': False, 'status': 'follower', 'votes': 0}
 
-		# begins the election (vote for myself and send requestVote RPC to all other servers)
-		def beginElection(self):
-			# TODOOOOOOO
-			# follower increments current term and becomes a candidate by voting for itself and sending RequestVote RPCs to other servers
-			self.STATUS['votes'] = 1
-			self.CURRENT_TERM = self.CURRENT_TERM + 1
-			self.STATUS['status'] = 'candidate'
-			self.LAST_UPDATED_TIME = time.time()
-			# continue issuing RequestVote RPCs until 1) wins election, 2) another server becomes leader, 3) period of time goes by with no winner
-			self.sendRequestVoteRPCs()
+	# begins the election (vote for myself and send requestVote RPC to all other servers)
+	def beginElection(self):
+		# TODOOOOOOO
+		# follower increments current term and becomes a candidate by voting for itself and sending RequestVote RPCs to other servers
+		self.STATUS['votes'] = 1
+		self.CURRENT_TERM = self.CURRENT_TERM + 1
+		self.STATUS['status'] = 'candidate'
+		self.LAST_UPDATED_TIME = time.time()
+		# continue issuing RequestVote RPCs until 1) wins election, 2) another server becomes leader, 3) period of time goes by with no winner
+		self.sendRequestVoteRPCs()
 
-		# LEADER
-		# TODO: i think i was wrong and we just need to send it once and it gets "sent in parallel"
-		# replicates log entries and send heartbeat to followers
-		def sendAppendEntriesRPC(self):
-			append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
-							  'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
-							  'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
+	# LEADER
+	# TODO: i think i was wrong and we just need to send it once and it gets "sent in parallel"
+	# replicates log entries and send heartbeat to followers
+	def sendAppendEntriesRPC(self):
+		append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+						  'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
+						  'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
 
-			# TODO: I hope this is right
-			if self.CURRENT_TERM > append_entries['term']:
-				self.sendDict(append_entries)
-				self.LAST_UPDATED_TIME = time.time()
-			elif self.CURRENT_TERM < append_entries['term']:
-				# term is invalid; update and faulty leader should step down
-				self.CURRENT_TERM = append_entries['term']
-				self.initializeServer()
-
-			# update all other servers
-			# TODO: (NOT SURE) I think this is where we update prevLogIndex
-			for rid in self.replica_ids:
-				if self.LAST_APPLIED > self.NEXT_INDEX[rid]:
-					# append_entries['prevLogIndex'] = len(self.LOG)
-					break
-
-
-		# FOLLOWER
-		def recvAppendEntriesRPC(self, msg):
-			if msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == \
-					msg['prevLogTerm']:
-				if not msg['entries']:
-					self.LEADER_ID = msg['leaderId']
-					self.STATUS['status'] = "follower"
-					self.STATUS['isLeader'] = False
-					self.STATUS['votes'] = 0
-				successful = self.updateLogFollower(msg)
-				self.updateCommitIndex(msg)
-				response = {'term': self.CURRENT_TERM, 'success': successful}
-
-		# FOLLOWER
-		#  If an existing entry conflicts with a new one (same index
-		# but different terms), delete the existing entry and all that
-		# follow it (5.3)
-		# Append any new entries not already in the log
-		# msg = AppendEntriesRPC
-		# return whether to respond success or not
-		def updateLogFollower(self, msg):
-			# applies entry to local state machine (in log order) once follower learns that log entry if committed
-			idx = msg['prevLogIndex']
-			self.LOG = self.LOG[:idx]
-			# add new entries to log
-			self.LOG.extend(msg['entries'])
-			for e in msg['entries']:
-				if e['command']['type'] == 'put':
-					self.updateKeyValue(e['command'])
-
-			return self.LOG[idx]['term'] == msg['prevLogTerm']
-
-		# LEADER
-		# update log after receiving a command from a client
-		# msg = client request
-		def updateLogLeader(self, msg):
-			self.LOG.append({'index': self.NEXT_INDEX, 'term': self.CURRENT_TERM, 'command': msg})
-
-		# LEADER
-		# handle responses to my appendEntriesRPC (if i am leader)
-		# If enough messages have now been received as successful, can commit the entry
-		# else just increment the NUM_SUCCESSES
-		# else if the response was a fail, then resend the AppendEntriesRPC
-		def appendEntriesRPCHandleResult(self, msg):
-			if msg['success']:
-				self.NUM_SUCCESSES += 1
-				if self.NUM_SUCCESSES >= QUORUM:
-					self.NUM_SUCCESSES = 0
-					self.updateCommitIndex(msg)
-					self.okGet(self.LOG[self.LAST_APPLIED]['command'])
-			else:
-				self.NEXT_INDEX -= 1
-				self.sendAppendEntriesRPC()
-
-		# FOLLOWER: making sure that my COMMIT_INDEX is as great as the leader's
-		# LEADER: updating my COMMIT_INDEX after receiving quorum of successful replica responses
-		def updateCommitIndex(self, msg):
-			if msg['leaderCommit'] > self.COMMIT_INDEX:
-				# update my own COMMIT_INDEX
-				self.COMMIT_INDEX = min(msg['leaderCommit'], self.LAST_APPLIED)
-
-		# CANDIDATE
-		# sends RequestVoteRPCs to all servers during an election
-		def sendRequestVoteRPCs(self):
-			# if the vote is in 'term' and is for the 'candidateId', then we sendDict
-			request_vote = {'term': self.CURRENT_TERM, 'candidateId': self.my_id, 'lastLogIndex': self.LAST_COMMITED,
-							'lastLogTerm': self.LOG[self.LAST_COMMITED]['term']}
-			self.sendDict(request_vote)
-
-		# receive RequestVoteRPCs from other servers
-		def recvRequestVoteRPCs(self, msg):
-			candidate_term = msg['term']
-			# Reply false if term < currentTerm (5.1)
-			if candidate_term < self.CURRENT_TERM:
-				response = {'term': self.CURRENT_TERM, 'voteGranted': False}
-
-			elif not self.VOTED_FOR or self.VOTED_FOR == msg['candidateId'] and msg[
-				'lastLogIndex'] >= self.LAST_COMMITED and msg['lastLogTerm'] >= self.LOG[self.LAST_COMMITED]['term']:
-				response = {'term': candidate_term, 'voteGranted': True}
-				self.VOTED_FOR = msg['candidateId']
-			else:
-				# not sure if we're supposed to be sending a response still, but that's what I'm doing for now
-				response = {'term': self.CURRENT_TERM, 'voteGranted': False}
-			self.sendDict(response)
-
-		# handle response from other servers of my RequestVoteRPC
-		def requestVoteRPCHandleResult(self, msg):
-			if msg['voteGranted']:
-				self.STATUS['votes'] += 1
-
-			if self.STATUS['votes'] >= QUORUM:
-				self.STATUS['isLeader'] = True
-				self.STATUS['status'] = 'leader'
-				self.reinitializeLeaderStates()
-				self.broadcastHeartbeat()
-
-		# reinitialize global variable states for leaders
-		def reinitializeLeaderStates(self):
-			for rid in self.replica_ids:
-				self.NEXT_INDEX[rid] = self.LAST_COMMITED + 1
-				self.MATCH_INDEX[rid] = 0
-
-		# LEADER
-		# send empty AppendEntriesRPC to all servers
-		# 1) used to establish its authority and prevent new elections upon winning an election
-		# 2) used to maintain leadership to prevent election timeouts
-		def broadcastHeartbeat(self):
-			append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
-							  'prevLogTerm': self.LOG[self.PREV_LOG_INDEX]['term'], 'entries': [],
-							  'leaderCommit': self.COMMIT_INDEX}
+		# TODO: I hope this is right
+		if self.CURRENT_TERM > append_entries['term']:
 			self.sendDict(append_entries)
+			self.LAST_UPDATED_TIME = time.time()
+		elif self.CURRENT_TERM < append_entries['term']:
+			# term is invalid; update and faulty leader should step down
+			self.CURRENT_TERM = append_entries['term']
+			self.initializeServer()
 
-		# return associated value with given key if it exists, else return an empty string
-		# TODO: this is for "If the client issues a get() for a key that has does not exist (i.e. it was never put()), your datastore should return an empty value (i.e. an empty string)."
-		# in the project description
-		def findVal(key):
-			val = self.KEY_VALUE.get(key)
-			return val if val else ""
+		# update all other servers
+		# TODO: (NOT SURE) I think this is where we update prevLogIndex
+		for rid in self.replica_ids:
+			if self.LAST_APPLIED > self.NEXT_INDEX[rid]:
+				# append_entries['prevLogIndex'] = len(self.LOG)
+				break
 
-		# update KEY_VALUE dictionary
-		def updateKeyValue(self, msg):
-			self.KEY_VALUE[msg['key']] = msg['value']
 
-		# turn given dictionary into json, and send through socket
-		def sendDict(self, msg):
-			msgjson = json.dumps(msg)
-			print(msgjson)
-			self.sock.sendall(msgjson)
-
-		# GET MSG
-		# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "get", "MID": "<a unique string>",
-		# "key": "<some key>"}
-
-		def handleGetMsg(self, msg):
-			# FOLLOWER
-			if not self.STATUS['isLeader']:
-				self.redirect(msg)
-			# LEADER
-			elif self.STATUS['isLeader']:
-				self.updateLogLeader(msg)
-				self.sendAppendEntriesRPC()
-			# else:
-			# 	# TODO: confused about when one would fail tho
-			# 	# uh oh, me too
-
-		# LEADER
-		# OK GET MSG
-		def okGet(self, msg):
-			ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID'],
-				  "value": self.findVal(msg['key'])}
-			self.sendDict(ok)
-
-		# LEADER
-		# FAIL GET MSG
-		def failGet(self, msg):
-			fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
-			self.sendDict(fail)
-
-		# PUT MSG
-		# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "put", "MID": "<a unique string>",
-		# "key": "<some key>", "value": "<value of the key>"}
-
-		def handlePutMsg(self, msg):
-			# FOLLOWER
-			if not self.STATUS['isLeader']:
-				self.redirect(msg)
-			# LEADER
-			elif self.STATUS['isLeader']:
-				self.updateLogLeader(msg)
-				self.updateKeyValue(msg)
-				self.sendAppendEntriesRPC()
-			# else:
-			# 	# TODO: confused about when one would fail tho
-			# 	# me too, so I just made a case where it's like neither follower or leader
-
-		# LEADER
-		# OK PUT MSG
-		def okPut(self, msg):
-			ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
-			self.sendDict(ok)
-
-		# LEADER
-		# FAIL PUT MSG
-		def failPut(self,msg):
-			fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
-			self.sendDict(fail)
-
-		# FOLLOWER
-		# REDIRECT MSG
-		def redirect(self, msg):
-			redir = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect",
-					 "MID": msg['MID']}
-			self.sendDict(redir)
-
-		# THE 2 METHODS BELOW: literally implmenenting the All Servers section of the Rules for Servers in RAFT protocol
-
-		# If RPC request or response contains term T > currentTerm:
-		# set currentTerm = T, convert to follower (5.1)
-		def termCheck(self, msg):
-			if msg['term'] > self.CURRENT_TERM:
-				self.CURRENT_TERM = msg['term']
-				self.STATUS['status'] = 'follower'
+	# FOLLOWER
+	def recvAppendEntriesRPC(self, msg):
+		if msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == \
+				msg['prevLogTerm']:
+			if not msg['entries']:
+				self.LEADER_ID = msg['leaderId']
+				self.STATUS['status'] = "follower"
 				self.STATUS['isLeader'] = False
+				self.STATUS['votes'] = 0
+			successful = self.updateLogFollower(msg)
+			self.updateCommitIndex(msg)
+			response = {'term': self.CURRENT_TERM, 'success': successful}
 
-		# If commitIndex > lastApplied: increment lastApplied, apply
-		# log[lastApplied] to state machine (5.3)
-		def compareCommitAndApplied(self):
-			if self.COMMIT_INDEX > self.LAST_APPLIED:
-				self.LAST_APPLIED += 1
-				# "apply log[lastApplied] to state machine"
-				self.COMMIT_INDEX = self.LAST_APPLIED
+	# FOLLOWER
+	#  If an existing entry conflicts with a new one (same index
+	# but different terms), delete the existing entry and all that
+	# follow it (5.3)
+	# Append any new entries not already in the log
+	# msg = AppendEntriesRPC
+	# return whether to respond success or not
+	def updateLogFollower(self, msg):
+		# applies entry to local state machine (in log order) once follower learns that log entry if committed
+		idx = msg['prevLogIndex']
+		self.LOG = self.LOG[:idx]
+		# add new entries to log
+		self.LOG.extend(msg['entries'])
+		for e in msg['entries']:
+			if e['command']['type'] == 'put':
+				self.updateKeyValue(e['command'])
 
-		# implementing RAFT election protocol
-		# remote procedure calls
-		# REQUEST VOTE: initiated by candidates during elections
-		# APPEND ENTRIES:  initiated by leaders to replicate log entries and to provide a form of heartbeat
-		# ** Servers retry RPCs if they do not receive a response in a timely manner, and they issue RPCs in parallel
-		# for best performance. **
-		while True:
-			ready = select.select([self.sock], [], [], 0.1)[0]
+		return self.LOG[idx]['term'] == msg['prevLogTerm']
 
-			if self.sock in ready:
-				msg_raw = self.sock.recv(32768)
+	# LEADER
+	# update log after receiving a command from a client
+	# msg = client request
+	def updateLogLeader(self, msg):
+		self.LOG.append({'index': self.NEXT_INDEX, 'term': self.CURRENT_TERM, 'command': msg})
 
-				if self.electionTimeout():
-					self.beginElection()
+	# LEADER
+	# handle responses to my appendEntriesRPC (if i am leader)
+	# If enough messages have now been received as successful, can commit the entry
+	# else just increment the NUM_SUCCESSES
+	# else if the response was a fail, then resend the AppendEntriesRPC
+	def appendEntriesRPCHandleResult(self, msg):
+		if msg['success']:
+			self.NUM_SUCCESSES += 1
+			if self.NUM_SUCCESSES >= QUORUM:
+				self.NUM_SUCCESSES = 0
+				self.updateCommitIndex(msg)
+				self.okGet(self.LOG[self.LAST_APPLIED]['command'])
+		else:
+			self.NEXT_INDEX -= 1
+			self.sendAppendEntriesRPC()
 
-				# first check if my COMMIT_INDEX and LAST_APPLIED are in sync
-				compareCommitAndApplied()
+	# FOLLOWER: making sure that my COMMIT_INDEX is as great as the leader's
+	# LEADER: updating my COMMIT_INDEX after receiving quorum of successful replica responses
+	def updateCommitIndex(self, msg):
+		if msg['leaderCommit'] > self.COMMIT_INDEX:
+			# update my own COMMIT_INDEX
+			self.COMMIT_INDEX = min(msg['leaderCommit'], self.LAST_APPLIED)
 
-				if len(msg_raw) == 0: continue
-				msg = json.loads(msg_raw)
+	# CANDIDATE
+	# sends RequestVoteRPCs to all servers during an election
+	def sendRequestVoteRPCs(self):
+		# if the vote is in 'term' and is for the 'candidateId', then we sendDict
+		request_vote = {'term': self.CURRENT_TERM, 'candidateId': self.my_id, 'lastLogIndex': self.LAST_COMMITED,
+						'lastLogTerm': self.LOG[self.LAST_COMMITED]['term']}
+		self.sendDict(request_vote)
 
-				# CLIENT MSGS
-				if msg['type'] in 'get' or msg['type'] in 'put':
-					# if I am leader and client sent a "get" msg
-					if self.STATUS['isLeader'] and msg['type'] in 'get':
-						handleGetMsg(msg)
-					# if I am leader and client sent a "put" msg
-					elif self.STATUS['isLeader'] and msg['type'] in 'put':
-						handlePutMsg(msg)
-					# if I am leader and client sent a "get" or "put" msg
-					elif not self.STATUS['isLeader'] and msg['type'] in 'get' or msg['type'] in 'put':
-						redirect(msg)
+	# receive RequestVoteRPCs from other servers
+	def recvRequestVoteRPCs(self, msg):
+		candidate_term = msg['term']
+		# Reply false if term < currentTerm (5.1)
+		if candidate_term < self.CURRENT_TERM:
+			response = {'term': self.CURRENT_TERM, 'voteGranted': False}
 
-				# MSGS FROM OTHER SERVERS
-				else:
-					# first do a term check to see I have right term
-					termCheck(msg)
-					# if I receive a RequestVoteRPC from another server
-					if 'candidateId' in msg:
-						recvRequestVoteRPCs(msg)
-					# if I receive a response to one of my RequestVoteRPCs
-					elif 'voteGranted' in msg:
-						requestVoteRPCHandleResult(msg)
-					# if I receive an AppendEntriesRPC
-					elif 'leaderCommit' in msg:
-						recvAppendEntriesRPC(msg)
-					# if I receive a response to one of my AppendEntriesRPCs
-					elif 'success' in msg:
-						appendEntriesRPCHandleResult(msg)
+		elif not self.VOTED_FOR or self.VOTED_FOR == msg['candidateId'] and msg[
+			'lastLogIndex'] >= self.LAST_COMMITED and msg['lastLogTerm'] >= self.LOG[self.LAST_COMMITED]['term']:
+			response = {'term': candidate_term, 'voteGranted': True}
+			self.VOTED_FOR = msg['candidateId']
+		else:
+			# not sure if we're supposed to be sending a response still, but that's what I'm doing for now
+			response = {'term': self.CURRENT_TERM, 'voteGranted': False}
+		self.sendDict(response)
+
+	# handle response from other servers of my RequestVoteRPC
+	def requestVoteRPCHandleResult(self, msg):
+		if msg['voteGranted']:
+			self.STATUS['votes'] += 1
+
+		if self.STATUS['votes'] >= QUORUM:
+			self.STATUS['isLeader'] = True
+			self.STATUS['status'] = 'leader'
+			self.reinitializeLeaderStates()
+			self.broadcastHeartbeat()
+
+	# reinitialize global variable states for leaders
+	def reinitializeLeaderStates(self):
+		for rid in self.replica_ids:
+			self.NEXT_INDEX[rid] = self.LAST_COMMITED + 1
+			self.MATCH_INDEX[rid] = 0
+
+	# LEADER
+	# send empty AppendEntriesRPC to all servers
+	# 1) used to establish its authority and prevent new elections upon winning an election
+	# 2) used to maintain leadership to prevent election timeouts
+	def broadcastHeartbeat(self):
+		append_entries = {'term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
+						  'prevLogTerm': self.LOG[self.PREV_LOG_INDEX]['term'], 'entries': [],
+						  'leaderCommit': self.COMMIT_INDEX}
+		self.sendDict(append_entries)
+
+	# return associated value with given key if it exists, else return an empty string
+	# TODO: this is for "If the client issues a get() for a key that has does not exist (i.e. it was never put()), your datastore should return an empty value (i.e. an empty string)."
+	# in the project description
+	def findVal(key):
+		val = self.KEY_VALUE.get(key)
+		return val if val else ""
+
+	# update KEY_VALUE dictionary
+	def updateKeyValue(self, msg):
+		self.KEY_VALUE[msg['key']] = msg['value']
+
+	# turn given dictionary into json, and send through socket
+	def sendDict(self, msg):
+		msgjson = json.dumps(msg)
+		print(msgjson)
+		self.sock.sendall(msgjson)
+
+	# GET MSG
+	# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "get", "MID": "<a unique string>",
+	# "key": "<some key>"}
+
+	def handleGetMsg(self, msg):
+		# FOLLOWER
+		if not self.STATUS['isLeader']:
+			self.redirect(msg)
+		# LEADER
+		elif self.STATUS['isLeader']:
+			self.updateLogLeader(msg)
+			self.sendAppendEntriesRPC()
+		# else:
+		# 	# TODO: confused about when one would fail tho
+		# 	# uh oh, me too
+
+	# LEADER
+	# OK GET MSG
+	def okGet(self, msg):
+		ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID'],
+			  "value": self.findVal(msg['key'])}
+		self.sendDict(ok)
+
+	# LEADER
+	# FAIL GET MSG
+	def failGet(self, msg):
+		fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
+		self.sendDict(fail)
+
+	# PUT MSG
+	# {"src": "<ID>", "dst": "<ID>", "leader": "<ID>", "type": "put", "MID": "<a unique string>",
+	# "key": "<some key>", "value": "<value of the key>"}
+
+	def handlePutMsg(self, msg):
+		# FOLLOWER
+		if not self.STATUS['isLeader']:
+			self.redirect(msg)
+		# LEADER
+		elif self.STATUS['isLeader']:
+			self.updateLogLeader(msg)
+			self.updateKeyValue(msg)
+			self.sendAppendEntriesRPC()
+		# else:
+		# 	# TODO: confused about when one would fail tho
+		# 	# me too, so I just made a case where it's like neither follower or leader
+
+	# LEADER
+	# OK PUT MSG
+	def okPut(self, msg):
+		ok = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
+		self.sendDict(ok)
+
+	# LEADER
+	# FAIL PUT MSG
+	def failPut(self,msg):
+		fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
+		self.sendDict(fail)
+
+	# FOLLOWER
+	# REDIRECT MSG
+	def redirect(self, msg):
+		redir = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect",
+				 "MID": msg['MID']}
+		self.sendDict(redir)
+
+	# THE 2 METHODS BELOW: literally implmenenting the All Servers section of the Rules for Servers in RAFT protocol
+
+	# If RPC request or response contains term T > currentTerm:
+	# set currentTerm = T, convert to follower (5.1)
+	def termCheck(self, msg):
+		if msg['term'] > self.CURRENT_TERM:
+			self.CURRENT_TERM = msg['term']
+			self.STATUS['status'] = 'follower'
+			self.STATUS['isLeader'] = False
+
+	# If commitIndex > lastApplied: increment lastApplied, apply
+	# log[lastApplied] to state machine (5.3)
+	def compareCommitAndApplied(self):
+		if self.COMMIT_INDEX > self.LAST_APPLIED:
+			self.LAST_APPLIED += 1
+			# "apply log[lastApplied] to state machine"
+			self.COMMIT_INDEX = self.LAST_APPLIED
+
+	# implementing RAFT election protocol
+	# remote procedure calls
+	# REQUEST VOTE: initiated by candidates during elections
+	# APPEND ENTRIES:  initiated by leaders to replicate log entries and to provide a form of heartbeat
+	# ** Servers retry RPCs if they do not receive a response in a timely manner, and they issue RPCs in parallel
+	# for best performance. **
+	while True:
+		ready = select.select([self.sock], [], [], 0.1)[0]
+
+		if self.sock in ready:
+			msg_raw = self.sock.recv(32768)
+
+			if self.electionTimeout():
+				self.beginElection()
+
+			# first check if my COMMIT_INDEX and LAST_APPLIED are in sync
+			compareCommitAndApplied()
+
+			if len(msg_raw) == 0: continue
+			msg = json.loads(msg_raw)
+
+			# CLIENT MSGS
+			if msg['type'] in 'get' or msg['type'] in 'put':
+				# if I am leader and client sent a "get" msg
+				if self.STATUS['isLeader'] and msg['type'] in 'get':
+					handleGetMsg(msg)
+				# if I am leader and client sent a "put" msg
+				elif self.STATUS['isLeader'] and msg['type'] in 'put':
+					handlePutMsg(msg)
+				# if I am leader and client sent a "get" or "put" msg
+				elif not self.STATUS['isLeader'] and msg['type'] in 'get' or msg['type'] in 'put':
+					redirect(msg)
+
+			# MSGS FROM OTHER SERVERS
+			else:
+				# first do a term check to see I have right term
+				termCheck(msg)
+				# if I receive a RequestVoteRPC from another server
+				if 'candidateId' in msg:
+					recvRequestVoteRPCs(msg)
+				# if I receive a response to one of my RequestVoteRPCs
+				elif 'voteGranted' in msg:
+					requestVoteRPCHandleResult(msg)
+				# if I receive an AppendEntriesRPC
+				elif 'leaderCommit' in msg:
+					recvAppendEntriesRPC(msg)
+				# if I receive a response to one of my AppendEntriesRPCs
+				elif 'success' in msg:
+					appendEntriesRPCHandleResult(msg)
 
 
-			# 	# Handle noop messages. This may be removed from your final implementation
-			# 	elif msg['type'] == 'noop':
-			# 		print '%s received a NOOP from %s' % (msg['dst'], msg['src'])
-			#
-			# clock = time.time()
-			# if clock-last > 2:
-			# 	# Send a no-op message to a random peer every two seconds, just for fun
-			# 	# You definitely want to remove this from your implementation
-			# 	msg = {'src': self.my_id, 'dst': random.choice(self.replica_ids), 'leader': 'FFFF', 'type': 'noop'}
-			# 	self.sock.send(json.dumps(msg))
-			# 	print '%s sending a NOOP to %s' % (msg['src'], msg['dst'])
-			# 	last = clock;
+		# 	# Handle noop messages. This may be removed from your final implementation
+		# 	elif msg['type'] == 'noop':
+		# 		print '%s received a NOOP from %s' % (msg['dst'], msg['src'])
+		#
+		# clock = time.time()
+		# if clock-last > 2:
+		# 	# Send a no-op message to a random peer every two seconds, just for fun
+		# 	# You definitely want to remove this from your implementation
+		# 	msg = {'src': self.my_id, 'dst': random.choice(self.replica_ids), 'leader': 'FFFF', 'type': 'noop'}
+		# 	self.sock.send(json.dumps(msg))
+		# 	print '%s sending a NOOP to %s' % (msg['src'], msg['dst'])
+		# 	last = clock
 
 # Your ID number = sys.argv[1]
 # The ID numbers of all th,""other replicas = sys.argv[2:]
