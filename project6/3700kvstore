@@ -98,35 +98,37 @@ class RaftServer:
     # TODO: i think i was wrong and we just need to send it once and it gets "sent in parallel"
     # replicates log entries and send heartbeat to followers
     def sendAppendEntriesRPC(self):
-        append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leaderId':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
-                          'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
-                          'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
+        for e in self.replica_entries:
+            append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leaderId':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+                              'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
+                              'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
 
-        # TODO: I hope this is right
-        if self.CURRENT_TERM > append_entries['term']:
-            self.sendDict(append_entries)
-            self.LAST_UPDATED_TIME = time.time()
-        elif self.CURRENT_TERM < append_entries['term']:
-            # term is invalid; update and faulty leader should step down
-            self.CURRENT_TERM = append_entries['term']
-            self.initializeServer()
+            # TODO: I hope this is right
+            if self.CURRENT_TERM > append_entries['term']:
+                self.sendDict(append_entries)
+                self.LAST_UPDATED_TIME = time.time()
+            elif self.CURRENT_TERM < append_entries['term']:
+                # term is invalid; update and faulty leader should step down
+                self.CURRENT_TERM = append_entries['term']
+                self.initializeServer()
 
-        # update all other servers
-        # TODO: (NOT SURE) I think this is where we update prevLogIndex
-        for rid in self.replica_ids:
-            if self.LAST_APPLIED > self.NEXT_INDEX[rid]:
-                # append_entries['prevLogIndex'] = len(self.LOG)
-                break
+            # update all other servers
+            # TODO: (NOT SURE) I think this is where we update prevLogIndex
+            for rid in self.replica_ids:
+                if self.LAST_APPLIED > self.NEXT_INDEX[rid]:
+                    # append_entries['prevLogIndex'] = len(self.LOG)
+                    break
 
 
     # FOLLOWER
     def recvAppendEntriesRPC(self, msg):
-        if msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
-            if not msg['entries']:
-                self.LEADER_ID = msg['leaderId']
-                self.STATUS['status'] = "follower"
-                self.STATUS['isLeader'] = False
-                self.STATUS['votes'] = 0
+        if not msg['entries']:
+            print("RECEIVED HEARTBEAT")
+            self.LEADER_ID = msg['leaderId']
+            self.STATUS['status'] = 'follower'
+            self.STATUS['isLeader'] = False
+            self.STATUS['votes'] = 0
+        elif msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
             response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
@@ -208,10 +210,12 @@ class RaftServer:
     def requestVoteRPCHandleResult(self, msg):
         if msg['voteGranted']:
             self.STATUS['votes'] += 1
-
+            print(self.STATUS['votes'])
         if self.STATUS['votes'] >= self.QUORUM:
+            print("IVE BEEN ELECTED!!! ", self.my_id)
             self.STATUS['isLeader'] = True
             self.STATUS['status'] = 'leader'
+            self.LEADER_ID = self.my_id
             self.reinitializeLeaderStates()
             self.broadcastHeartbeat()
 
@@ -227,6 +231,7 @@ class RaftServer:
     # 2) used to maintain leadership to prevent election timeouts
     def broadcastHeartbeat(self):
         for e in self.replica_ids:
+            print("SO NOW I'LL SEND HEARTBEATS TO EVERYONE ELSE ", self.my_id)
             append_entries = {'src': self.my_id, 'dst':e, 'leader': self.my_id, 'type': 'broadcastheartbeat','term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
                               'prevLogTerm': self.CURRENT_TERM - 1, 'entries': [],
                               'leaderCommit': self.COMMIT_INDEX}
