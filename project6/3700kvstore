@@ -197,7 +197,7 @@ class RaftServer:
 		self.updateStateMachine(msg)
 		self.successPutToClient(msg)
 
-	def updateLV(self, msg):
+	def updateKV(self, msg):
 		self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
