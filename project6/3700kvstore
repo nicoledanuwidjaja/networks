@@ -34,8 +34,8 @@ class RaftServer:
 
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
-		print(msgjson)
-		self.sock.sendall(msgjson)
+		msgbytes = msgjson.encode('utf-8')
+		self.sock.sendall(msgbytes)
 
 	def sendFailMsg(self, msg):
 		fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
@@ -58,3 +58,4 @@ while True:
 				# For now, ignore get() and put() from clients
 				if msg['type'] in ['get', 'put']:
 						server.sendFailMsg(msg)
+						print("SENDING FAIL")
