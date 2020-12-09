@@ -98,19 +98,26 @@ class RaftServer:
     # TODO: i think i was wrong and we just need to send it once and it gets "sent in parallel"
     # replicates log entries and send heartbeat to followers
     def sendAppendEntriesRPC(self):
-        for e in self.replica_entries:
-            append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leaderId':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+        print("SEND APPEND ENTIRES HAPPENING")
+        for e in self.replica_ids:
+            append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leader':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
                               'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
-                              'entries': self.LOG[self.NEXT_INDEX:], 'leaderCommit': self.COMMIT_INDEX}
-
+                              'entries': self.LOG[self.NEXT_INDEX[e]:], 'leaderCommit': self.COMMIT_INDEX}
+            self.PREV_LOG_INDEX = len(self.LOG)
+            self.PREV_LOG_TERM = self.LOG[self.PREV_LOG_INDEX - 1]['term']
+            print("CURRENT TERM: ", self.CURRENT_TERM)
+            print("APPEND_ENDTIRES TERM: ", append_entries['term'])
+            
             # TODO: I hope this is right
-            if self.CURRENT_TERM > append_entries['term']:
-                self.sendDict(append_entries)
-                self.LAST_UPDATED_TIME = time.time()
-            elif self.CURRENT_TERM < append_entries['term']:
-                # term is invalid; update and faulty leader should step down
-                self.CURRENT_TERM = append_entries['term']
-                self.initializeServer()
+#            if self.CURRENT_TERM > append_entries['term']:
+#                print("FIRST IF")
+            self.sendDict(append_entries)
+            self.LAST_UPDATED_TIME = time.time()
+#            elif self.CURRENT_TERM < append_entries['term']:
+#                print("SECOND IF")
+#                # term is invalid; update and faulty leader should step down
+#                self.CURRENT_TERM = append_entries['term']
+#                self.initializeServer()
 
             # update all other servers
             # TODO: (NOT SURE) I think this is where we update prevLogIndex
@@ -130,12 +137,12 @@ class RaftServer:
             self.STATUS['votes'] = 0
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
-            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
+            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leader': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
             sendDict(response)
         elif msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
-            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leaderId': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
+            response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leader': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
             sendDict(response)
         self.LAST_UPDATED_TIME = int(round(time.time() * 1000))
 
@@ -147,6 +154,7 @@ class RaftServer:
     # msg = AppendEntriesRPC
     # return whether to respond success or not
     def updateLogFollower(self, msg):
+        print("UPDATE LOG FOLLOWER ON :", self.my_id)
         # applies entry to local state machine (in log order) once follower learns that log entry if committed
         idx = msg['prevLogIndex']
         self.LOG = self.LOG[:idx]
@@ -162,6 +170,7 @@ class RaftServer:
     # update log after receiving a command from a client
     # msg = client request
     def updateLogLeader(self, msg):
+        print("UPDATE LOG LEADER HAPPENING")
         self.LOG.append({'index': self.NEXT_INDEX, 'term': self.CURRENT_TERM, 'command': msg})
 
     # LEADER
@@ -238,6 +247,7 @@ class RaftServer:
     def broadcastHeartbeat(self):
         for e in self.replica_ids:
             print("SO NOW I'LL SEND HEARTBEATS TO EVERYONE ELSE ", self.my_id)
+            print(self.STATUS['isLeader'])
             append_entries = {'src': self.my_id, 'dst':e, 'leader': self.my_id, 'type': 'broadcastheartbeat','term': self.CURRENT_TERM, 'leaderId': self.my_id, 'prevLogIndex': self.PREV_LOG_INDEX,
                               'prevLogTerm': self.CURRENT_TERM - 1, 'entries': [],
                               'leaderCommit': self.COMMIT_INDEX}
@@ -253,6 +263,7 @@ class RaftServer:
     # update KEY_VALUE dictionary
     def updateKeyValue(self, msg):
         self.KEY_VALUE[msg['key']] = msg['value']
+        print('KEY VALUE WAS PDATED')
 
     # turn given dictionary into json, and send through socket
     def sendDict(self, msg):
@@ -267,9 +278,11 @@ class RaftServer:
     def handleGetMsg(self, msg):
         # FOLLOWER
         if not self.STATUS['isLeader']:
+            print("HANDLEGET: I AM NOT LEADER")
             self.redirect(msg)
         # LEADER
         elif self.STATUS['isLeader']:
+            print("HANDLEGET: I AM LEADER")
             self.updateLogLeader(msg)
             self.sendAppendEntriesRPC()
         # else:
@@ -296,9 +309,12 @@ class RaftServer:
     def handlePutMsg(self, msg):
         # FOLLOWER
         if not self.STATUS['isLeader']:
+            print("HANDLEPUT:I AM NOT LEADER") 
             self.redirect(msg)
         # LEADER
         elif self.STATUS['isLeader']:
+            print("HANDLEPUT: I AM LEADER")
+            print(msg)
             self.updateLogLeader(msg)
             self.updateKeyValue(msg)
             self.sendAppendEntriesRPC()
@@ -364,6 +380,7 @@ while True:
 			server.beginElection()
 
                 if server.STATUS['isLeader']:
+                    print("REASSERTING MY LEADERSHIP")
                     server.broadcastHeartbeat()
 		# first check if my COMMIT_INDEX and LAST_APPLIED are in sync
 		server.compareCommitAndApplied()
@@ -371,16 +388,25 @@ while True:
 		if len(msg_raw) == 0: continue
 		msg = json.loads(msg_raw)
 
+		if server.LEADER_ID == server.my_id:
+			server.STATUS['isLeader'] = True
+
 		# CLIENT MSGS
 		if msg['type'] in 'get' or msg['type'] in 'put':
+			print(server.LEADER_ID)
 			# if I am leader and client sent a "get" msg
+			print(server.STATUS['isLeader'])
 			if server.STATUS['isLeader'] and msg['type'] in 'get':
+				print("I AM LEADER")
 				server.handleGetMsg(msg)
 			# if I am leader and client sent a "put" msg
 			elif server.STATUS['isLeader'] and msg['type'] in 'put':
-				server.handlePutMsg(msg)
+				print("I AM LEADER")
+				server.handlePutMsg(msg)				
 			# if I am leader and client sent a "get" or "put" msg
 			elif not server.STATUS['isLeader'] and msg['type'] in 'get' or msg['type'] in 'put':
+				print(server.STATUS['isLeader'])
+				print("I AM NOT LEADER :( ")
 				server.redirect(msg)
 
 		# MSGS FROM OTHER SERVERS
