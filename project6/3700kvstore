@@ -16,6 +16,18 @@ class RaftServer:
 		self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
 		self.sock.connect(my_id)
 
+		# STATE
+		# persistent on ALL servers
+		self.CURRENT_TERM = 0
+		self.VOTED_FOR = None
+		self.LOG = []
+		# Volatile state on ALL servers
+		self.COMMIT_INDEX = 0
+		self.LAST_APPLIED = 0
+		# Volatile state on LEADERS
+		self.NEXT_INDEX = []
+		self.MATCH_INDEX = []
+
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
 		print(msgjson)
