@@ -190,6 +190,10 @@ while True:
 			print("ELECTION TIMEOUT")
 			server.raftElectionProtocol()
 
+		# periodically sending heartbeats to avoid timeout
+		if server.isLeader():
+			server.sendHeartbeat()
+
 		if server.sock in ready:
 				msg_raw = server.sock.recv(32768)
 
