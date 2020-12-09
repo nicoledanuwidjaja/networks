@@ -5,7 +5,6 @@ import sys, socket, select, time, json, random, math
 # TODO: im confused about when to send 'fail' responses to clients
 # TODO: LOG ENTRY STUFF
 
-# seemed like a class approach would be nicer to store all the state stuff!
 class RaftServer:
     def __init__(self, my_id, replica_ids):
         self.my_id = my_id  # Your ID number
@@ -85,7 +84,6 @@ class RaftServer:
 
     # begins the election (vote for myself and send requestVote RPC to all other servers)
     def beginElection(self):
-        # TODOOOOOOO
         # follower increments current term and becomes a candidate by voting for itself and sending RequestVote RPCs to other servers
         self.STATUS['votes'] = 1
         self.CURRENT_TERM = self.CURRENT_TERM + 1
@@ -99,12 +97,16 @@ class RaftServer:
     # replicates log entries and send heartbeat to followers
     def sendAppendEntriesRPC(self):
         print("SEND APPEND ENTIRES HAPPENING")
-        for e in self.replica_ids:
-            append_entries = {'src': self.my_id, 'dst':e, 'type': 'appendEntriesRPC', 'leader':self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
-                              'prevLogIndex': len(self.LOG), 'prevLogTerm': self.PREV_LOG_TERM,
-                              'entries': self.LOG[self.NEXT_INDEX[e]:], 'leaderCommit': self.COMMIT_INDEX}
-            self.PREV_LOG_INDEX = len(self.LOG)
-            self.PREV_LOG_TERM = self.LOG[self.PREV_LOG_INDEX - 1]['term']
+	print("COMMIT INDEX: ", self.COMMIT_INDEX)
+	
+	for rid in self.replica_ids:
+	    entries = self.LOG[self.NEXT_INDEX[rid]:]
+	    self.PREV_LOG_INDEX = self.NEXT_INDEX[rid] - 1
+	    print("Prev log: ", self.PREV_LOG_INDEX)
+	    self.PREV_LOG_TERM = self.LOG[self.PREV_LOG_INDEX]['term']
+            append_entries = {'src': self.my_id, 'dst': rid, 'type': 'appendEntriesRPC', 'leader': self.my_id, 'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+                              'prevLogIndex': self.PREV_LOG_INDEX, 'prevLogTerm': self.PREV_LOG_TERM,
+                              'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
             print("CURRENT TERM: ", self.CURRENT_TERM)
             print("APPEND_ENDTIRES TERM: ", append_entries['term'])
             
@@ -119,13 +121,6 @@ class RaftServer:
 #                self.CURRENT_TERM = append_entries['term']
 #                self.initializeServer()
 
-            # update all other servers
-            # TODO: (NOT SURE) I think this is where we update prevLogIndex
-            for rid in self.replica_ids:
-                if self.LAST_APPLIED > self.NEXT_INDEX[rid]:
-                    # append_entries['prevLogIndex'] = len(self.LOG)
-                    break
-
 
     # FOLLOWER
     def recvAppendEntriesRPC(self, msg):
@@ -138,12 +133,12 @@ class RaftServer:
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
             response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leader': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
-            sendDict(response)
+            self.sendDict(response)
         elif msg['term'] >= self.CURRENT_TERM and self.PREV_LOG_INDEX == msg['prevLogIndex'] and self.PREV_LOG_TERM == msg['prevLogTerm']:
             successful = self.updateLogFollower(msg)
             self.updateCommitIndex(msg)
             response = {'src': self.my_id, 'dst': msg['src'], 'type':'respondAppendEntriesRPC', 'leader': self.LEADER_ID, 'term': self.CURRENT_TERM, 'success': successful}
-            sendDict(response)
+            self.sendDict(response)
         self.LAST_UPDATED_TIME = int(round(time.time() * 1000))
 
     # FOLLOWER
@@ -157,14 +152,17 @@ class RaftServer:
         print("UPDATE LOG FOLLOWER ON :", self.my_id)
         # applies entry to local state machine (in log order) once follower learns that log entry if committed
         idx = msg['prevLogIndex']
-        self.LOG = self.LOG[:idx]
+	print("INDEX ", idx)
+        self.LOG = self.LOG[:idx+1]
+	print("SIZE: ", len(self.LOG))
         # add new entries to log
         self.LOG.extend(msg['entries'])
         for e in msg['entries']:
             if e['command']['type'] == 'put':
                 self.updateKeyValue(e['command'])
-
-        return self.LOG[idx]['term'] == msg['prevLogTerm']
+	print(self.LOG)
+	print(msg['prevLogTerm'])
+        return len(self.LOG) > 0 and self.LOG[idx]['term'] == msg['prevLogTerm']
 
     # LEADER
     # update log after receiving a command from a client
@@ -179,15 +177,16 @@ class RaftServer:
     # else just increment the NUM_SUCCESSES
     # else if the response was a fail, then resend the AppendEntriesRPC
     def appendEntriesRPCHandleResult(self, msg):
-        if msg['success']:
+	if msg['success']:
             self.NUM_SUCCESSES += 1
             if self.NUM_SUCCESSES >= self.QUORUM:
                 self.NUM_SUCCESSES = 0
                 self.updateCommitIndex(msg)
                 self.okGet(self.LOG[self.LAST_APPLIED]['command'])
         else:
-            self.NEXT_INDEX -= 1
-            self.sendAppendEntriesRPC()
+            self.NEXT_INDEX[msg['src']] -= 1
+	    self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']]
+	    self.sendAppendEntriesRPC()
 
     # FOLLOWER: making sure that my COMMIT_INDEX is as great as the leader's
     # LEADER: updating my COMMIT_INDEX after receiving quorum of successful replica responses
@@ -228,6 +227,12 @@ class RaftServer:
             print(self.STATUS['votes'])
         if self.STATUS['votes'] >= self.QUORUM:
             print("IVE BEEN ELECTED!!! ", self.my_id)
+	    
+	    # update times
+	    for rid in self.replica_ids:
+		self.NEXT_INDEX[rid] = len(self.LOG)
+		self.MATCH_INDEX[rid] = 0
+
             self.STATUS['isLeader'] = True
             self.STATUS['status'] = 'leader'
             self.LEADER_ID = self.my_id
@@ -389,6 +394,7 @@ while True:
 		msg = json.loads(msg_raw)
 
 		if server.LEADER_ID == server.my_id:
+			
 			server.STATUS['isLeader'] = True
 
 		# CLIENT MSGS
