@@ -33,8 +33,16 @@ class RaftServer:
 		self.KEY_VALUE = {}
 		self.STATUS = "follower"
 		self.VOTES = 0
-		self.LAST_UPDATED_TIME = time.time()
 		self.QUORUM = math.ceil(len(self.replica_ids) / 2)
+		self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
+		self.LAST_UPDATED_TIME = time.time()
+
+	# turn time into miliseconds
+	def getTime(self, curr_time):
+		return int(round(curr_time * 1000))
+
+	def electionTimeout(self):
+		return (self.getTime(time.time()) - self.getTime(self.LAST_UPDATED_TIME)) > self.ELECTION_TIMEOUT
 
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
@@ -50,6 +58,7 @@ class RaftServer:
 		self.sendDict(redirect)
 
 	def raftElectionProtocol(self):
+		print("INITIATING PROTOCOL: ", self.my_id)
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -59,6 +68,7 @@ class RaftServer:
 		self.sendRequestVoteRPCs()
 
 	def sendRequestVoteRPCs(self):
+		print("SENDING REQUESTVOTERPCS: ", self.my_id)
 		for r in self.replica_ids:
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
 					   'term': self.CURRENT_TERM, 'candidateId': self.myId,
@@ -95,10 +105,12 @@ class RaftServer:
 			self.VOTES +=1
 
 		if self.VOTES >= self.QUORUM:
+			print("WON THE ELECTION!!: ", self.my_id)
 			self.becomeLeader()
 			self.sendHeartbeat()
 
 	def becomeLeader(self):
+		print("BECOMING LEADER: ", self.my_id)
 		self.STATUS = "leader"
 		self.LEADER_ID = self.my_id
 		self.VOTES = 0
@@ -107,6 +119,7 @@ class RaftServer:
 			self.NEXT_INDEX[r] = self.lastLogIndex() + 1
 
 	def sendHeartbeat(self):
+		print("SENDING HEARTBEATS TO ASSERT LEADRESHIP: ", self.my_id)
 		for r in self.replica_ids:
 			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
 			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
@@ -120,6 +133,7 @@ class RaftServer:
 		# still accept src as new leader
 		self.LEADER_ID = msg['src']
 		self.STATUS = 'follower'
+		# HEARD FROM LEADER!!
 		self.LAST_UPDATED_TIME = time.time()
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
@@ -170,6 +184,10 @@ server = RaftServer(sys.argv[1], sys.argv[2:])
 
 while True:
 		ready = select.select([server.sock], [], [], 0.1)[0]
+
+		if server.electionTimeout():
+			print("ELECTION TIMEOUT")
+			server.raftElectionProtocol()
 
 		if server.sock in ready:
 				msg_raw = server.sock.recv(32768)
