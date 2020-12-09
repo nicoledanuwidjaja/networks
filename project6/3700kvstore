@@ -171,7 +171,7 @@ class RaftServer:
 	# AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
 	def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
 		# make sure my log is same length in the first place
-		if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
+		if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
 			if self.LOG[prevLogIdx]['term'] != prevLogTerm:
 				# only keep everything up to but not including prevLogIdx
 				self.LOG = self.LOG[:prevLogIdx]
