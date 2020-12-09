@@ -199,7 +199,14 @@ while True:
 				if msg['type'] in ['get', 'put']:
 					if not server.isLeader():
 						server.sendRedirectMsg(msg)
-						print("SENDING REDIRECT")
 					else:
 						server.sendFailMsg(msg)
 						print("SENDING FAIL")
+				elif msg['type'] == 'Heartbeat':
+					server.recvHeartbeat(msg)
+				elif msg['type'] == 'sendRequestVoteRPC':
+					server.respondToRequestVoteRPCs(msg)
+				elif msg['type'] == 'respondToRequestVoteRPC':
+					server.handleRequestVoteRPCResult(msg)
+				#elif msg['type'] == 'respToHeartbeat':
+
