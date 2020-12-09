@@ -191,10 +191,14 @@ class RaftServer:
 
 	def handlePut(self, msg):
 		self.updateLogLeader(msg)
+		self.updateKV(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
 		self.updateStateMachine(msg)
 		self.successPutToClient(msg)
+
+	def updateLV(self, msg):
+		self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
 		self.LOG.append({'command':msg, 'term': self.CURRENT_TERM})
