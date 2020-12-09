@@ -71,7 +71,7 @@ class RaftServer:
 		print("SENDING REQUESTVOTERPCS: ", self.my_id)
 		for r in self.replica_ids:
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
-					   'term': self.CURRENT_TERM, 'candidateId': self.myId,
+					   'term': self.CURRENT_TERM, 'candidateId': self.my_id,
 					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
 			self.sendDict(request)
 
@@ -93,6 +93,7 @@ class RaftServer:
 			response['voteGranted'] = False
 			self.sendDict(response)
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
+			print("VOTE GRANTED FOR: ", msg['src'])
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
 			self.sendDict(response)
@@ -199,7 +200,6 @@ while True:
 				if msg['type'] in ['get', 'put']:
 					if not server.isLeader():
 						server.sendRedirectMsg(msg)
-						print("SENDING REDIRECT")
 					else:
 						server.sendFailMsg(msg)
 						print("SENDING FAIL")
