@@ -25,8 +25,8 @@ class RaftServer:
 		self.COMMIT_INDEX = 0 # added to local log
 		self.LAST_APPLIED = 0 # applied to the leader's state machine
 		# Volatile state on LEADERS
-		self.NEXT_INDEX = []
-		self.MATCH_INDEX = []
+		self.NEXT_INDEX = {}
+		self.MATCH_INDEX = {}
 
 		# states we may need
 		self.LEADER_ID = "FFFF"
