@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, socket, select, time, json, random
+import sys, socket, select, time, json, random, math
 
 
 class RaftServer:
@@ -20,10 +20,10 @@ class RaftServer:
 		# persistent on ALL servers
 		self.CURRENT_TERM = 0
 		self.VOTED_FOR = None
-		self.LOG = []
+		self.LOG = [] # { command, term }
 		# Volatile state on ALL servers
-		self.COMMIT_INDEX = 0
-		self.LAST_APPLIED = 0
+		self.COMMIT_INDEX = 0 # added to local log
+		self.LAST_APPLIED = 0 # applied to the leader's state machine
 		# Volatile state on LEADERS
 		self.NEXT_INDEX = []
 		self.MATCH_INDEX = []
@@ -31,6 +31,10 @@ class RaftServer:
 		# states we may need
 		self.LEADER_ID = "FFFF"
 		self.KEY_VALUE = {}
+		self.STATUS = "follower"
+		self.VOTES = 0
+		self.LAST_UPDATED_TIME = time.time()
+		self.QUORUM = math.ceil(len(self.replica_ids) / 2)
 
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
@@ -41,8 +45,126 @@ class RaftServer:
 		fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
 		self.sendDict(fail)
 
-	last = 0
+	def sendRedirectMsg(self, msg):
+		redirect = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect", "MID": msg['MID']}
+		self.sendDict(redirect)
 
+	def raftElectionProtocol(self):
+		# convert to candidate
+		self.STATUS = "candidate"
+		# increment currentTerm
+		self.CURRENT_TERM +=1
+		self.VOTES = 1
+		self.LAST_UPDATED_TIME = time.time()
+		self.sendRequestVoteRPCs()
+
+	def sendRequestVoteRPCs(self):
+		for r in self.replica_ids:
+			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
+					   'term': self.CURRENT_TERM, 'candidateId': self.myId,
+					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
+			self.sendDict(request)
+
+	def lastLogIndex(self):
+		return len(self.LOG)
+
+	def lastLogTerm(self):
+		length = len(self.LOG)
+		if length == 0:
+			return self.CURRENT_TERM
+		else:
+			return self.LOG[length - 1]
+
+	def respondToRequestVoteRPCs(self, msg):
+		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
+		response = {'src': msg['src'], 'dst': msg['dst'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
+					'term': self.CURRENT_TERM}
+		if msg['term'] < self.CURRENT_TERM:
+			response['voteGranted'] = False
+			self.sendDict(response)
+		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
+			response['voteGranted'] = True
+			self.VOTED_FOR = msg['src']
+			self.sendDict(response)
+		else:
+			response['voteGranted'] = False
+			self.sendDict(response)
+
+	def handleRequestVoteRPCResult(self, msg):
+		if msg['voteGranted']:
+			self.VOTES +=1
+
+		if self.VOTES >= self.QUORUM:
+			self.becomeLeader()
+			self.sendHeartbeat()
+
+	def becomeLeader(self):
+		self.STATUS = "leader"
+		self.LEADER_ID = self.my_id
+		self.VOTES = 0
+		for r in self.replica_ids:
+			self.MATCH_INDEX[r] = 0
+			self.NEXT_INDEX[r] = self.lastLogIndex() + 1
+
+	def sendHeartbeat(self):
+		for r in self.replica_ids:
+			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
+			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
+					  'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+					  'prevLogIndex': self.lastLogIndex(), 'prevLogTerm': self.lastLogTerm(),
+					  'entries': [], 'leaderCommit': self.COMMIT_INDEX}
+			self.sendDict(append)
+
+	def recvHeartbeat(self, msg):
+		# once you receive heartbeat, regardless of if youre responding true or false,
+		# still accept src as new leader
+		self.LEADER_ID = msg['src']
+		self.STATUS = 'follower'
+		self.LAST_UPDATED_TIME = time.time()
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+					'term': self.CURRENT_TERM}
+		# TODO: should i be updating term here?
+		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = False
+		else:
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = True
+
+	# matches terms
+	def matchesTerms(self, prevLogIdx, prevLogTerm):
+		if prevLogIdx == 0:
+			return True
+		# make sure my log is same length in the first place
+		elif len(self.LOG) >= prevLogIdx:
+			if self.LOG[prevLogIdx]['term'] == prevLogTerm:
+					return True
+		else:
+			return False
+
+
+	# TODO: confused about the purpose of this
+	# ohh i get it. its if leader has more updated commits but didnt send all entires
+	# necessary for me to have that many commmits. so i need to make my commit Idx be whattever
+	# leader sent me and not exactly what leader has
+	def updateCommitIdx(self, leaderCommit):
+		if leaderCommit > self.COMMIT_INDEX:
+			self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
+
+	# AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
+	def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
+		# make sure my log is same length in the first place
+		if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
+			if self.LOG[prevLogIdx]['term'] != prevLogTerm:
+				# only keep everything up to but not including prevLogIdx
+				self.LOG = self.LOG[:prevLogIdx]
+
+	def appendNewEntriesToLog(self, entries):
+		None
+
+	def isLeader(self):
+		return self.my_id == self.LEADER_ID
 
 server = RaftServer(sys.argv[1], sys.argv[2:])
 
@@ -57,5 +179,9 @@ while True:
 
 				# For now, ignore get() and put() from clients
 				if msg['type'] in ['get', 'put']:
+					if not server.isLeader():
+						server.sendRedirectMsg(msg)
+						print("SENDING REDIRECT")
+					else:
 						server.sendFailMsg(msg)
 						print("SENDING FAIL")
