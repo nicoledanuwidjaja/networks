@@ -93,7 +93,7 @@ class RaftServer:
 			response['voteGranted'] = False
 			self.sendDict(response)
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
-			print("VOTE GRANTED FOR: ", msg['src'])
+			print(self.my_id, " VOTE GRANTED FOR: ", msg['src'])
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
 			self.sendDict(response)
