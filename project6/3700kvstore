@@ -153,7 +153,7 @@ class RaftServer:
 		if prevLogIdx == 0:
 			return True
 		# make sure my log is same length in the first place
-		elif len(self.LOG) >= prevLogIdx:
+		elif len(self.LOG) - 1 >= prevLogIdx:
 			if self.LOG[prevLogIdx]['term'] == prevLogTerm:
 					return True
 		else:
@@ -216,6 +216,7 @@ class RaftServer:
 
 	def successGetToClient(self, msg):
 		value = self.KEY_VALUE.get(msg['key'])
+		print("KV IS : ", value)
 		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
 						"MID": msg['MID']}
 		if value:
