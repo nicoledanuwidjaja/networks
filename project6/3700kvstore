@@ -28,6 +28,10 @@ class RaftServer:
 		self.NEXT_INDEX = []
 		self.MATCH_INDEX = []
 
+		# states we may need
+		self.LEADER_ID = "FFFF"
+		self.KEY_VALUE = {}
+
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
 		print(msgjson)
