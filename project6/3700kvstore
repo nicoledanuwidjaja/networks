@@ -25,16 +25,25 @@ class RaftServer:
 		self.COMMIT_INDEX = 0 # added to local log
 		self.LAST_APPLIED = 0 # applied to the leader's state machine
 		# Volatile state on LEADERS
-		self.NEXT_INDEX = []
-		self.MATCH_INDEX = []
+		self.NEXT_INDEX = {}
+		self.MATCH_INDEX = {}
 
 		# states we may need
 		self.LEADER_ID = "FFFF"
 		self.KEY_VALUE = {}
+		self.STATE_MACHINE = []
 		self.STATUS = "follower"
 		self.VOTES = 0
-		self.LAST_UPDATED_TIME = time.time()
 		self.QUORUM = math.ceil(len(self.replica_ids) / 2)
+		self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
+		self.LAST_UPDATED_TIME = time.time()
+
+	# turn time into miliseconds
+	def getTime(self, curr_time):
+		return int(round(curr_time * 1000))
+
+	def electionTimeout(self):
+		return (self.getTime(time.time()) - self.getTime(self.LAST_UPDATED_TIME)) > self.ELECTION_TIMEOUT
 
 	def sendDict(self, msg):
 		msgjson = json.dumps(msg)
@@ -50,6 +59,7 @@ class RaftServer:
 		self.sendDict(redirect)
 
 	def raftElectionProtocol(self):
+		print("INITIATING PROTOCOL: ", self.my_id)
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -59,9 +69,10 @@ class RaftServer:
 		self.sendRequestVoteRPCs()
 
 	def sendRequestVoteRPCs(self):
+		print("SENDING REQUESTVOTERPCS: ", self.my_id)
 		for r in self.replica_ids:
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
-					   'term': self.CURRENT_TERM, 'candidateId': self.myId,
+					   'term': self.CURRENT_TERM, 'candidateId': self.my_id,
 					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
 			self.sendDict(request)
 
@@ -73,7 +84,7 @@ class RaftServer:
 		if length == 0:
 			return self.CURRENT_TERM
 		else:
-			return self.LOG[length - 1]
+			return self.LOG[length - 1]['term']
 
 	def respondToRequestVoteRPCs(self, msg):
 		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
@@ -83,6 +94,7 @@ class RaftServer:
 			response['voteGranted'] = False
 			self.sendDict(response)
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
+			print(self.my_id, " VOTE GRANTED FOR: ", msg['src'])
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
 			self.sendDict(response)
@@ -95,10 +107,12 @@ class RaftServer:
 			self.VOTES +=1
 
 		if self.VOTES >= self.QUORUM:
+			print("WON THE ELECTION!!: ", self.my_id)
 			self.becomeLeader()
 			self.sendHeartbeat()
 
 	def becomeLeader(self):
+		print("BECOMING LEADER: ", self.my_id)
 		self.STATUS = "leader"
 		self.LEADER_ID = self.my_id
 		self.VOTES = 0
@@ -107,6 +121,7 @@ class RaftServer:
 			self.NEXT_INDEX[r] = self.lastLogIndex() + 1
 
 	def sendHeartbeat(self):
+		print("SENDING HEARTBEATS TO ASSERT LEADRESHIP: ", self.my_id)
 		for r in self.replica_ids:
 			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
 			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
@@ -120,6 +135,7 @@ class RaftServer:
 		# still accept src as new leader
 		self.LEADER_ID = msg['src']
 		self.STATUS = 'follower'
+		# HEARD FROM LEADER!!
 		self.LAST_UPDATED_TIME = time.time()
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
@@ -137,9 +153,9 @@ class RaftServer:
 		if prevLogIdx == 0:
 			return True
 		# make sure my log is same length in the first place
-		elif len(self.LOG) >= prevLogIdx:
+		elif len(self.LOG) - 1 >= prevLogIdx:
 			if self.LOG[prevLogIdx]['term'] == prevLogTerm:
-					return True
+				return True
 		else:
 			return False
 
@@ -155,7 +171,7 @@ class RaftServer:
 	# AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
 	def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
 		# make sure my log is same length in the first place
-		if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
+		if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
 			if self.LOG[prevLogIdx]['term'] != prevLogTerm:
 				# only keep everything up to but not including prevLogIdx
 				self.LOG = self.LOG[:prevLogIdx]
@@ -166,22 +182,85 @@ class RaftServer:
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID
 
+	def handleGet(self, msg):
+		self.updateLogLeader(msg)
+		#self.broadcastTransaction(msg)
+		#TODO: if transaction passes
+		self.updateStateMachine(msg)
+		self.successGetToClient(msg)
+
+	def handlePut(self, msg):
+		self.updateLogLeader(msg)
+		self.updateKV(msg)
+		#self.broadcastTransaction(msg)
+		#TODO: if transaction passes
+		self.updateStateMachine(msg)
+		self.successPutToClient(msg)
+
+	def updateKV(self, msg):
+		self.KEY_VALUE[msg['key']] = msg['value']
+
+	def updateLogLeader(self, msg):
+		self.LOG.append({'command':msg, 'term': self.CURRENT_TERM})
+		self.COMMIT_INDEX += 1
+
+	def updateStateMachine(self, msg):
+		if msg['type'] == 'put':
+			self.KEY_VALUE[msg['key']] = msg['value']
+			# todo: i hope indices line up :/
+			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+		elif msg['type'] == 'get':
+			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+
+		self.LAST_APPLIED +=1
+
+	def successGetToClient(self, msg):
+		value = self.KEY_VALUE.get(msg['key'])
+		print("KV IS : ", value)
+		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
+					"MID": msg['MID']}
+		if value:
+			response['value'] = value
+		else:
+			response['value'] = ""
+		self.sendDict(response)
+
+	def successPutToClient(self, msg):
+		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
+					"MID": msg['MID']}
+		self.sendDict(response)
+
 server = RaftServer(sys.argv[1], sys.argv[2:])
 
 while True:
-		ready = select.select([server.sock], [], [], 0.1)[0]
+	ready = select.select([server.sock], [], [], 0.1)[0]
 
-		if server.sock in ready:
-				msg_raw = server.sock.recv(32768)
+	if server.electionTimeout():
+		print("ELECTION TIMEOUT")
+		server.raftElectionProtocol()
 
-				if len(msg_raw) == 0: continue
-				msg = json.loads(msg_raw)
+	# periodically sending heartbeats to avoid timeout
+	if server.isLeader():
+		server.sendHeartbeat()
 
-				# For now, ignore get() and put() from clients
-				if msg['type'] in ['get', 'put']:
-					if not server.isLeader():
-						server.sendRedirectMsg(msg)
-						print("SENDING REDIRECT")
-					else:
-						server.sendFailMsg(msg)
-						print("SENDING FAIL")
+	if server.sock in ready:
+		msg_raw = server.sock.recv(32768)
+
+		if len(msg_raw) == 0: continue
+		msg = json.loads(msg_raw)
+
+
+		if server.isLeader() and msg['type'] in ['get', 'put']:
+			if msg['type'] == 'get':
+				server.handleGet(msg)
+			elif msg['type'] == 'put':
+				server.handlePut(msg)
+		elif msg['type'] in ['get', 'put']:
+			server.sendRedirectMsg(msg)
+		elif msg['type'] == 'Heartbeat':
+			server.recvHeartbeat(msg)
+		elif msg['type'] == 'sendRequestVoteRPC':
+			server.respondToRequestVoteRPCs(msg)
+		elif msg['type'] == 'respondToRequestVoteRPC':
+			server.handleRequestVoteRPCResult(msg)
+		# elif msg['type'] == 'respToHeartbeat':
