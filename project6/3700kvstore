@@ -217,8 +217,8 @@ class RaftServer:
 	def successGetToClient(self, msg):
 		value = self.KEY_VALUE.get(msg['key'])
 		print("KV IS : ", value)
-		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
-					"MID": msg['MID']}
+		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
+
 		if value:
 			response['value'] = value
 		else:
