@@ -142,6 +142,8 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
+		self.sendDict(response)
+
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -194,7 +196,7 @@ class RaftServer:
 		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
-		#self.broadcastTransaction(msg)
+		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
@@ -242,9 +244,6 @@ class RaftServer:
 			response['success'] = True
 
 		self.sendDict(response)
-
-
-
 
 
 	def successGetToClient(self, msg):
