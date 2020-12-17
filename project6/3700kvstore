@@ -178,6 +178,7 @@ class RaftServer:
 
 	def handleGet(self, msg):
 		print("GET MSG: ", msg['key'])
+		print("FOR MID: ", msg['MID'])
 		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
 		print("PRINTING CURRENT STATE_MACHINE")
 		for k in self.STATE_MACHINE.keys():
