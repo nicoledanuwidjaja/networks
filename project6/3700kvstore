@@ -83,9 +83,9 @@ class RaftServer:
 		else:
 			return self.LOG[length - 1]['term']
 
-	# this is a knockoff of the lastLogTerm above. This is what happens when you have low self-confidence
-	def lastLogTerm(self, id):
-		return self.LOG[self.MATCH_INDEX[id]['term']]
+	# # this is a knockoff of the lastLogTerm above. This is what happens when you have low self-confidence
+	# def lastLogTerm(self, id):
+	# 	return self.LOG[self.MATCH_INDEX[id]['term']]
 
 	def respondToRequestVoteRPCs(self, msg):
 		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
