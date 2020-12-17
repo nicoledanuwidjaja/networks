@@ -179,7 +179,9 @@ class RaftServer:
 	def handleGet(self, msg):
 		print("GET MSG: ", msg['key'])
 		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-		print(self.STATE_MACHINE)
+		print("PRINTING CURRENT STATE_MACHINE")
+		for k in self.STATE_MACHINE.keys():
+			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
