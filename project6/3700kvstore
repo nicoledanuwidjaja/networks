@@ -20,7 +20,7 @@ class RaftServer:
 		# persistent on ALL servers
 		self.CURRENT_TERM = 0
 		self.VOTED_FOR = None
-		self.LOG = [] # { command, term }
+		self.LOG = [] # { idx, command, term }
 		# Volatile state on ALL servers
 		self.COMMIT_INDEX = 0 # added to local log
 		self.LAST_APPLIED = 0 # applied to the leader's state machine
@@ -141,6 +141,7 @@ class RaftServer:
 		else:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
+		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -192,9 +193,9 @@ class RaftServer:
 	def handlePut(self, msg):
 		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
-		self.updateStateMachine(msg)
 		# TODO
 		#self.broadcastTransaction(msg)
+		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
 
@@ -202,7 +203,7 @@ class RaftServer:
 	# 	self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
-		self.LOG.append({'command':msg, 'term': self.CURRENT_TERM})
+		self.LOG.append({'idx': len(self.LOG) + 1, 'command':msg, 'term': self.CURRENT_TERM})
 		self.COMMIT_INDEX += 1
 
 	def updateStateMachine(self, msg):
@@ -214,6 +215,37 @@ class RaftServer:
 		# 	self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
 		self.LAST_APPLIED +=1
+
+	def broadcastTransaction(self, msg):
+		for r in self.replica_ids:
+			if self.NEXT_INDEX[r] <= self.lastLogIndex():
+				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
+
+	def sendAppendEntriesRPC(self, entries, replica):
+		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
+				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
+				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+		self.sendDict(message)
+
+	def respondToAppendEntriesRPC(self, msg):
+		self.LAST_UPDATED_TIME = time.time()
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+					'term': self.CURRENT_TERM}
+		# TODO: should i be updating term here?
+		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = False
+		else:
+			self.appendNewEntriesToLog(msg['entries'])
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = True
+
+		self.sendDict(response)
+
+
+
+
 
 	def successGetToClient(self, msg):
 		value = self.STATE_MACHINE.get(msg['key'])
