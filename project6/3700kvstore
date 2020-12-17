@@ -30,8 +30,7 @@ class RaftServer:
 
 		# states we may need
 		self.LEADER_ID = "FFFF"
-		self.KEY_VALUE = {}
-		self.STATE_MACHINE = []
+		self.STATE_MACHINE = {}
 		self.STATUS = "follower"
 		self.VOTES = 0
 		self.QUORUM = math.ceil(len(self.replica_ids) / 2)
@@ -183,22 +182,22 @@ class RaftServer:
 		return self.my_id == self.LEADER_ID
 
 	def handleGet(self, msg):
-		self.updateLogLeader(msg)
+		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
-		self.updateStateMachine(msg)
+		# self.updateStateMachine(msg)
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
 		self.updateLogLeader(msg)
-		self.updateKV(msg)
+		self.updateStateMachine(msg)
+		# TODO
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
-		self.updateStateMachine(msg)
 		self.successPutToClient(msg)
 
-	def updateKV(self, msg):
-		self.KEY_VALUE[msg['key']] = msg['value']
+	# def updateKV(self, msg):
+	# 	self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
 		self.LOG.append({'command':msg, 'term': self.CURRENT_TERM})
@@ -206,16 +205,16 @@ class RaftServer:
 
 	def updateStateMachine(self, msg):
 		if msg['type'] == 'put':
-			self.KEY_VALUE[msg['key']] = msg['value']
+			self.STATE_MACHINE[msg['key']] = msg['value']
 			# todo: i hope indices line up :/
-			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
-		elif msg['type'] == 'get':
-			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+			# self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+		# elif msg['type'] == 'get':
+		# 	self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
 		self.LAST_APPLIED +=1
 
 	def successGetToClient(self, msg):
-		value = self.KEY_VALUE.get(msg['key'])
+		value = self.STATE_MACHINE.get(msg['key'])
 		print("KV IS : ", value)
 		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
 
