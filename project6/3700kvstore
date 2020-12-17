@@ -180,11 +180,11 @@ class RaftServer:
 				self.LOG = self.LOG[:prevLogIdx]
 
 	# TODO: THis is Me NICOLE <(O_O<)
+	# add all the new entries
+	# for id in something?
+	# curr_msg = self.LOG(id)
+	# i gave up
 	def appendNewEntriesToLog(self, entries):
-		# add all the new entries
-		# for id in something?
-		# curr_msg = self.LOG(id)
-		# i gave up
 		None
 
 
