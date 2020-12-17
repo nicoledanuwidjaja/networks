@@ -220,10 +220,12 @@ class RaftServer:
 
 	def broadcastTransaction(self, msg):
 		for r in self.replica_ids:
+			print("BROADCASTING TRANSACTION")
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
 
 	def sendAppendEntriesRPC(self, entries, replica):
+		print("ENTRIES: ", entries)
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
 				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
@@ -231,7 +233,7 @@ class RaftServer:
 
 	def respondToAppendEntriesRPC(self, msg):
 		self.LAST_UPDATED_TIME = time.time()
-		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToAppendEntriesRPC',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
@@ -243,6 +245,7 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 
+		print("RESPONSE TO APPENRPC: ", response)
 		self.sendDict(response)
 
 
