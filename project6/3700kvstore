@@ -142,8 +142,6 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
-		self.sendDict(response)
-
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -183,7 +181,7 @@ class RaftServer:
 		print("GET MSG: ", msg['key'])
 		print("FOR MID: ", msg['MID'])
 		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-		print("PRINTING CURRENT STATE_MACHINE FOR: ", self.my_id)
+		print("PRINTING CURRENT STATE_MACHINE")
 		for k in self.STATE_MACHINE.keys():
 			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		# self.updateLogLeader(msg)
@@ -196,7 +194,7 @@ class RaftServer:
 		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
-		self.broadcastTransaction(msg)
+		#self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
@@ -220,12 +218,10 @@ class RaftServer:
 
 	def broadcastTransaction(self, msg):
 		for r in self.replica_ids:
-			print("BROADCASTING TRANSACTION")
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
 
 	def sendAppendEntriesRPC(self, entries, replica):
-		print("ENTRIES: ", entries)
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
 				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
@@ -233,7 +229,7 @@ class RaftServer:
 
 	def respondToAppendEntriesRPC(self, msg):
 		self.LAST_UPDATED_TIME = time.time()
-		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToAppendEntriesRPC',
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
@@ -245,8 +241,10 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 
-		print("RESPONSE TO APPENRPC: ", response)
 		self.sendDict(response)
+
+
+
 
 
 	def successGetToClient(self, msg):
@@ -297,4 +295,3 @@ while True:
 			server.respondToRequestVoteRPCs(msg)
 		elif msg['type'] == 'respondToRequestVoteRPC':
 			server.handleRequestVoteRPCResult(msg)
-		# elif msg['type'] == 'respToHeartbeat':
