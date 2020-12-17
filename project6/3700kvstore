@@ -177,6 +177,8 @@ class RaftServer:
 		return self.my_id == self.LEADER_ID
 
 	def handleGet(self, msg):
+		print("GET MSG: ", msg['key'])
+		print(self.STATE_MACHINE)
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
@@ -184,6 +186,7 @@ class RaftServer:
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
+		print("PUT MSG: ", msg['key'], " : ", msg['value'])
 		self.updateLogLeader(msg)
 		self.updateStateMachine(msg)
 		# TODO
