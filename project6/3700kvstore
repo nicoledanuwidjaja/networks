@@ -185,6 +185,7 @@ class RaftServer:
 		# for id in something?
 		# curr_msg = self.LOG(id)
 		# i gave up
+		None
 
 
 
@@ -198,17 +199,21 @@ class RaftServer:
 		print("PRINTING CURRENT STATE_MACHINE")
 		for k in self.STATE_MACHINE.keys():
 			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+
+
+		# TODO: got rid of bc no more logging get's!
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
 		# self.updateStateMachine(msg)
+
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
 		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
-		#self.broadcastTransaction(msg)
+		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
