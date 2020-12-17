@@ -25,8 +25,8 @@ class RaftServer:
 		self.COMMIT_INDEX = 0 # added to local log
 		self.LAST_APPLIED = 0 # applied to the leader's state machine
 		# Volatile state on LEADERS
-		self.NEXT_INDEX = {}
-		self.MATCH_INDEX = {}
+		self.NEXT_INDEX = {} # { server : index of next log entry } (initial: leader last log + 1)
+		self.MATCH_INDEX = {} # { server : index of highest known log entry } (initial: 0)
 
 		# states we may need
 		self.LEADER_ID = "FFFF"
@@ -83,6 +83,10 @@ class RaftServer:
 		else:
 			return self.LOG[length - 1]['term']
 
+	# # this is a knockoff of the lastLogTerm above. This is what happens when you have low self-confidence
+	# def lastLogTerm(self, id):
+	# 	return self.LOG[self.MATCH_INDEX[id]['term']]
+
 	def respondToRequestVoteRPCs(self, msg):
 		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
 		response = {'src': msg['src'], 'dst': msg['dst'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
@@ -134,6 +138,7 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
+		# I DON'T THINK SO?
 		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
 			self.updateCommitIdx(msg['leaderCommit'])
@@ -141,6 +146,16 @@ class RaftServer:
 		else:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
+		# I THOUGHT SO?
+		self.sendDict(response)
+
+>>>>>>> b8fb8ebe361e38bab349fc4ad0c09aea8056c1ad
+>>>>>>> f659b3b2abe8b35f23f1759db2d4364101f89256
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -157,7 +172,7 @@ class RaftServer:
 	# TODO: confused about the purpose of this
 	# ohh i get it. its if leader has more updated commits but didnt send all entires
 	# necessary for me to have that many commmits. so i need to make my commit Idx be whattever
-	# leader sent me and not exactly what leader has
+	# leader sent me and not exactly what leader has (I think that's right as well)
 	def updateCommitIdx(self, leaderCommit):
 		if leaderCommit > self.COMMIT_INDEX:
 			self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
@@ -170,8 +185,15 @@ class RaftServer:
 				# only keep everything up to but not including prevLogIdx
 				self.LOG = self.LOG[:prevLogIdx]
 
+	# TODO: THis is Me NICOLE <(O_O<)
+	# add all the new entries
+	# for id in something?
+	# curr_msg = self.LOG(id)
+	# i gave up
 	def appendNewEntriesToLog(self, entries):
 		None
+
+
 
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID
@@ -183,10 +205,14 @@ class RaftServer:
 		print("PRINTING CURRENT STATE_MACHINE")
 		for k in self.STATE_MACHINE.keys():
 			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+
+
+		# TODO: got rid of bc no more logging get's!
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
 		# self.updateStateMachine(msg)
+
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
@@ -194,7 +220,15 @@ class RaftServer:
 		self.updateLogLeader(msg)
 		self.updateStateMachine(msg)
 		# TODO
+<<<<<<< HEAD
 		#self.broadcastTransaction(msg)
+<<<<<<< HEAD
+=======
+=======
+		self.broadcastTransaction(msg)
+		self.updateStateMachine(msg)
+>>>>>>> b8fb8ebe361e38bab349fc4ad0c09aea8056c1ad
+>>>>>>> f659b3b2abe8b35f23f1759db2d4364101f89256
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
 
@@ -215,6 +249,63 @@ class RaftServer:
 
 		self.LAST_APPLIED +=1
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+	def broadcastTransaction(self, msg):
+		for r in self.replica_ids:
+			if self.NEXT_INDEX[r] <= self.lastLogIndex():
+				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
+
+
+	# TODO: I think this needs more updating for updating commit indices? I'm not sure..
+	# I believe in the old code we iterated on the replica ids, so i put that back in, but lmk if u think it's bad
+	def sendAppendEntriesRPC(self, entries, replica):
+		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
+				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
+				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+
+		for rid in self.replica_ids:
+			self.PREV_LOG_INDEX = self.NEXT_INDEX[rid] - 1
+			print("Prev log index: ", self.PREV_LOG_INDEX)
+			# I changed self.LastLogTerm() to take in the current rid?
+			# but i didn't get rid of the old one either so now there's two of them :P
+			self.PREV_LOG_TERM = self.lastLogTerm(rid)
+			print("Prev log term: ", self.PREV_LOG_TERM)
+			# update time again
+			self.LAST_UPDATED_TIME = time.time()
+
+		self.sendDict(message)
+
+	def respondToAppendEntriesRPC(self, msg):
+		self.LAST_UPDATED_TIME = time.time()
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+					'term': self.CURRENT_TERM}
+		# TODO: should i be updating term here?
+		# Nicole: Also don't think so, we're just updating the indices here
+		# soooo I think we need to update match_index and next_index here? And you already got commit_index so nice
+		# TO CHECK/TEST THIS LATER
+		self.NEXT_INDEX[msg['src']] = msg['leaderCommit']
+		self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']]
+
+		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = False
+		else:
+			self.appendNewEntriesToLog(msg['entries'])
+			self.updateCommitIdx(msg['leaderCommit'])
+			response['success'] = True
+
+		self.sendDict(response)
+
+
+
+
+
+>>>>>>> b8fb8ebe361e38bab349fc4ad0c09aea8056c1ad
+>>>>>>> f659b3b2abe8b35f23f1759db2d4364101f89256
 	def successGetToClient(self, msg):
 		value = self.STATE_MACHINE.get(msg['key'])
 		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
