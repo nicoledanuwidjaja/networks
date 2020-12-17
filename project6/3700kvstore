@@ -103,7 +103,7 @@ class RaftServer:
 			self.VOTES +=1
 
 		if self.VOTES >= self.QUORUM:
-			print("WON THE ELECTION!!: ", self.my_id)
+			# print("WON THE ELECTION!!: ", self.my_id)
 			self.becomeLeader()
 			self.sendHeartbeat()
 
@@ -178,12 +178,12 @@ class RaftServer:
 		return self.my_id == self.LEADER_ID
 
 	def handleGet(self, msg):
-		print("GET MSG: ", msg['key'])
-		print("FOR MID: ", msg['MID'])
-		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-		print("PRINTING CURRENT STATE_MACHINE")
-		for k in self.STATE_MACHINE.keys():
-			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+		# print("GET MSG: ", msg['key'])
+		# print("FOR MID: ", msg['MID'])
+		# print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
+		# print("PRINTING CURRENT STATE_MACHINE")
+		# for k in self.STATE_MACHINE.keys():
+		# 	print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		#TODO: if transaction passes
@@ -191,7 +191,7 @@ class RaftServer:
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
-		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
+		# print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
 		#self.broadcastTransaction(msg)
@@ -268,7 +268,7 @@ while True:
 	ready = select.select([server.sock], [], [], 0.1)[0]
 
 	if server.electionTimeout():
-		print("ELECTION TIMEOUT")
+		# print("ELECTION TIMEOUT")
 		server.raftElectionProtocol()
 
 	# periodically sending heartbeats to avoid timeout
