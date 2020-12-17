@@ -178,6 +178,7 @@ class RaftServer:
 
 	def handleGet(self, msg):
 		print("GET MSG: ", msg['key'])
+		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
 		print(self.STATE_MACHINE)
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
@@ -213,7 +214,6 @@ class RaftServer:
 
 	def successGetToClient(self, msg):
 		value = self.STATE_MACHINE.get(msg['key'])
-		print("KV IS : ", value)
 		response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
 
 		if value:
