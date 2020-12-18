@@ -194,7 +194,7 @@ class RaftServer:
             if self.LOG[prevLogIdx]['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
                 # This is Nicole's add
-                self.COMMIT_INDEX = msg['prevLogIdx'] + 1
+                self.COMMIT_INDEX = msg['prevLogIndex'] + 1
                 self.LOG = self.LOG[:prevLogIdx]
 
 
