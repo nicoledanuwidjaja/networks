@@ -58,6 +58,7 @@ class RaftServer:
 		self.sendDict(redirect)
 
 	def raftElectionProtocol(self):
+		print("INITIATING RAFT ELECTION FOR: ", self.my_id)
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -68,6 +69,7 @@ class RaftServer:
 
 	def sendRequestVoteRPCs(self):
 		for r in self.replica_ids:
+			print("SENDING REQVOTE FOR: ", self.my_id, " TO: ", r)
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
 					   'term': self.CURRENT_TERM, 'candidateId': self.my_id,
 					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
