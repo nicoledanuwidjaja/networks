@@ -91,13 +91,16 @@ class RaftServer:
 					'term': self.CURRENT_TERM}
 		if msg['term'] < self.CURRENT_TERM:
 			response['voteGranted'] = False
+			print(self.my_id, " RESPONDING ", response['voteGranted'], " TO REQVOTE FROM: ", msg['src'])
 			self.sendDict(response)
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
+			print(self.my_id, " RESPONDING ", response['voteGranted'], " TO REQVOTE FROM: ", msg['src'])
 			self.sendDict(response)
 		else:
 			response['voteGranted'] = False
+			print(self.my_id, " RESPONDING ", response['voteGranted'], " TO REQVOTE FROM: ", msg['src'])
 			self.sendDict(response)
 
 	def handleRequestVoteRPCResult(self, msg):
