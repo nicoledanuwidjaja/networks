@@ -92,7 +92,7 @@ class RaftServer:
 		if length == 0:
 			return 0
 		else:
-			lastTerm = self.LOG[length - 1]['term']
+			lastTerm = self.LOG[[length - 1]['term']]
 			return lastTerm
 
 	def prevLogIndex(self, r):
@@ -105,7 +105,7 @@ class RaftServer:
 			return 0
 		else:
 			print("PREVLOGINDEX: ", prevLogIndex)
-			prevTerm = self.LOG[prevLogIndex - 1]['term']
+			prevTerm = self.LOG[[prevLogIndex - 1]['term']]
 			print("PREVTERM: ", prevTerm)
 			return prevTerm
 
@@ -350,7 +350,7 @@ class RaftServer:
 	def updateLastApplied(self):
 		while self.COMMIT_INDEX > self.LAST_APPLIED:
 			self.LAST_APPLIED += 1
-			self.updateStateMachine(self.LOG[self.LAST_APPLIED - 1]['command'])
+			self.updateStateMachine(self.LOG[[self.LAST_APPLIED - 1]['command']])
 
 server = RaftServer(sys.argv[1], sys.argv[2:])
 
