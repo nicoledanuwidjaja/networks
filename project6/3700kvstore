@@ -116,6 +116,7 @@ class RaftServer:
 
 	def sendHeartbeat(self):
 		for r in self.replica_ids:
+			print("sending heartbeat to: ", r)
 			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
 			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
 					  'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
@@ -289,7 +290,6 @@ while True:
 
 	# periodically sending heartbeats to avoid timeout
 	if server.isLeader():
-		print("sending heartbeat")
 		server.sendHeartbeat()
 
 	if server.sock in ready:
