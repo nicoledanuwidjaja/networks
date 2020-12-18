@@ -170,7 +170,8 @@ class RaftServer:
         if prevLogIdx == 0:
             return True
         # make sure my log is same length in the first place
-        elif len(self.LOG) - 1 >= prevLogIdx:
+		# TODO: 173 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
+        elif len(self.LOG) >= prevLogIdx:
             dictionary = self.LOG[prevLogIdx]
             if dictionary['term'] == prevLogTerm:
                 return True
