@@ -58,7 +58,6 @@ class RaftServer:
 		self.sendDict(redirect)
 
 	def raftElectionProtocol(self):
-		print("INITIATING RAFT ELECTION FOR: ", self.my_id)
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -150,6 +149,8 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
+		# self.sendDict(response)
+		
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -181,6 +182,8 @@ class RaftServer:
 
 	def appendNewEntriesToLog(self, entries):
 		self.LOG.append(entries)
+		print("PRINTING LOG")
+		print(self.LOG)
 
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID
@@ -204,13 +207,14 @@ class RaftServer:
 		# 	print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		self.updateLogLeader(msg)
 		# TODO
+		print("VALUES: ", msg['key'])
+		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
+		self.updateLogLeader(msg)
 		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
 
-	# def updateKV(self, msg):
-	# 	self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
 		self.LOG.append({'idx': len(self.LOG) + 1, 'command':msg, 'term': self.CURRENT_TERM})
@@ -221,8 +225,9 @@ class RaftServer:
 			self.STATE_MACHINE[msg['key']] = msg['value']
 			# todo: i hope indices line up :/
 			# self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
-		# elif msg['type'] == 'get':
-		# 	self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+		elif msg['type'] == 'get':
+			print("ADD GET TO STATE MACHINE")
+			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
 		self.LAST_APPLIED +=1
 
@@ -240,6 +245,12 @@ class RaftServer:
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
 				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+	#	for rid in self.replica_ids:
+	#		self.PREV_LOG_INDEX = self.NEXT_INDEX[rid] - 1
+	#		print("Prev log index: ", self.PREV_LOG_INDEX)
+	#		self.PREV_LOG_TERM = self.lastLogTerm()
+	#		self.LAST_UPDATED_TIME = time.time()		
+		print(message)
 		self.sendDict(message)
 
 	def respondToAppendEntriesRPC(self, msg):
@@ -253,11 +264,13 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 		else:
-			# print("UPDATE SUCCESSFUL")
+			print("ENTRIES:")
+			print(msg['entries'])
 			self.appendNewEntriesToLog(msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
-
+		# CAUSES JSON PROBLEM
+		# self.sendDict(response)
 		self.sendDict(response)
 
 	def handleAppendEntriesRPCResult(self, msg):
@@ -268,7 +281,6 @@ class RaftServer:
 		else:
 			self.NEXT_INDEX[msg['src']] -= 1
 			self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
-
 
 
 	def successGetToClient(self, msg):
