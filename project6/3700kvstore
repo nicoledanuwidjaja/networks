@@ -197,6 +197,10 @@ class RaftServer:
 
 
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
+		print("IN MATCHES TERM")
+		print("PREVLOGIDX: ", prevLogIdx)
+		print("LEN SELF.LOG: ", len(self.LOG))
+		print("PREVLOGTERM: ", prevLogTerm)
 		if prevLogIdx == 0 and len(self.LOG) == 0 and prevLogTerm == 0:
 			return True
 		# make sure my log is same length in the first place
