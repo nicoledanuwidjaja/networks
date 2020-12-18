@@ -104,8 +104,8 @@ class RaftServer:
 		if length == 0:
 			return 0
 		else:
-			prevTerm = self.LOG[prevLogIndex - 1]['term']
 			print("PREVLOGINDEX: ", prevLogIndex)
+			prevTerm = self.LOG[prevLogIndex - 1]['term']
 			print("PREVTERM: ", prevTerm)
 			return prevTerm
 
