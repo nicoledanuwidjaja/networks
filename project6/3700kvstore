@@ -227,6 +227,7 @@ class RaftServer:
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
 				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+		print(self.lastLogIndex())
 		self.sendDict(message)
 
 	def respondToAppendEntriesRPC(self, msg):
