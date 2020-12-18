@@ -105,6 +105,8 @@ class RaftServer:
 			return 0
 		else:
 			prevTerm = self.LOG[prevLogIndex - 1]['term']
+			print("PREVLOGINDEX: ", prevLogIndex)
+			print("PREVTERM: ", prevTerm)
 			return prevTerm
 
 	def updateTerm(self, term):
