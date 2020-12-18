@@ -123,7 +123,6 @@ class RaftServer:
 
 
     def becomeLeader(self):
-        print("NEW LEADER: ", self.my_id)
         self.STATUS = "leader"
         self.LEADER_ID = self.my_id
         self.VOTES = 0
@@ -316,7 +315,7 @@ server = RaftServer(sys.argv[1], sys.argv[2:])
 while True:
     ready = select.select([server.sock], [], [], 0.1)[0]
 
-    if server.electionTimeout():
+    if server.electionTimeout() and not server.isLeader():
         # print("ELECTION TIMEOUT")
         server.raftElectionProtocol()
 
