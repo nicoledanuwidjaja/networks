@@ -123,6 +123,7 @@ class RaftServer:
 
 
     def becomeLeader(self):
+        print("NEW LEADER: ", self.my_id)
         self.STATUS = "leader"
         self.LEADER_ID = self.my_id
         self.VOTES = 0
