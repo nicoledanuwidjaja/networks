@@ -193,7 +193,7 @@ class RaftServer:
 		print("PUT MSG FOR ", self.my_id, " : [", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
-		#self.broadcastTransaction(msg)
+		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
