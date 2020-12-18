@@ -1,314 +1,316 @@
 #!/usr/bin/env python3
 import sys, socket, select, time, json, random, math
 
+
 class RaftServer:
-        def __init__(self, my_id, replica_ids):
-                # Your ID number
-                self.my_id = my_id
+    def __init__(self, my_id, replica_ids):
+        # Your ID number
+        self.my_id = my_id
 
-                # The ID numbers of all the other replicas
-                self.replica_ids = replica_ids
+        # The ID numbers of all the other replicas
+        self.replica_ids = replica_ids
 
-                # Connect to the network. All messages to/from other replicas and clients will
-                # occur over this socket
-                self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
-                self.sock.connect(my_id)
+        # Connect to the network. All messages to/from other replicas and clients will
+        # occur over this socket
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        self.sock.connect(my_id)
 
-                # STATE
-                # persistent on ALL servers
-                self.CURRENT_TERM = 0
-                self.VOTED_FOR = None
-                self.LOG = [] # { idx, command, term }
-                # Volatile state on ALL servers
-                self.COMMIT_INDEX = 0 # added to local log
-                self.LAST_APPLIED = 0 # applied to the leader's state machine
-                # Volatile state on LEADERS
-                self.NEXT_INDEX = {}
-                self.MATCH_INDEX = {}
+        # STATE
+        # persistent on ALL servers
+        self.CURRENT_TERM = 0
+        self.VOTED_FOR = None
+        self.LOG = []  # { idx, command, term }
+        # Volatile state on ALL servers
+        self.COMMIT_INDEX = 0  # added to local log
+        self.LAST_APPLIED = 0  # applied to the leader's state machine
+        # Volatile state on LEADERS
+        self.NEXT_INDEX = {}
+        self.MATCH_INDEX = {}
 
-                # states we may need
-                self.LEADER_ID = "FFFF"
-                self.STATE_MACHINE = {}
-                self.STATUS = "follower"
-                self.VOTES = 0
-                self.QUORUM = math.ceil(len(self.replica_ids) / 2)
-                self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
-                self.LAST_UPDATED_TIME = time.time()
+        # states we may need
+        self.LEADER_ID = "FFFF"
+        self.STATE_MACHINE = {}
+        self.STATUS = "follower"
+        self.VOTES = 0
+        self.QUORUM = math.ceil(len(self.replica_ids) / 2)
+        self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
+        self.LAST_UPDATED_TIME = time.time()
 
-        # turn time into miliseconds
-        def getTime(self, curr_time):
-                return int(round(curr_time * 1000))
+    # turn time into miliseconds
+    def getTime(self, curr_time):
+        return int(round(curr_time * 1000))
 
-        def electionTimeout(self):
-                return (self.getTime(time.time()) - self.getTime(self.LAST_UPDATED_TIME)) > self.ELECTION_TIMEOUT
+    def electionTimeout(self):
+        return (self.getTime(time.time()) - self.getTime(self.LAST_UPDATED_TIME)) > self.ELECTION_TIMEOUT
 
-        def sendDict(self, msg):
-                msgjson = json.dumps(msg)
-                msgbytes = msgjson.encode('utf-8')
-                self.sock.sendall(msgbytes)
+    def sendDict(self, msg):
+        msgjson = json.dumps(msg)
+        msgbytes = msgjson.encode('utf-8')
+        self.sock.sendall(msgbytes)
 
-        def sendFailMsg(self, msg):
-                fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
-                self.sendDict(fail)
+    def sendFailMsg(self, msg):
+        fail = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "fail", "MID": msg['MID']}
+        self.sendDict(fail)
 
-        def sendRedirectMsg(self, msg):
-                redirect = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect", "MID": msg['MID']}
-                self.sendDict(redirect)
+    def sendRedirectMsg(self, msg):
+        redirect = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "redirect",
+                    "MID": msg['MID']}
+        self.sendDict(redirect)
 
-        def raftElectionProtocol(self):
-                print("ELECT CANDIDATE")
-                # convert to candidate
-                self.STATUS = "candidate"
-                # increment currentTerm
-                self.CURRENT_TERM +=1
-                self.VOTES = 1
-                self.LAST_UPDATED_TIME = time.time()
-                self.sendRequestVoteRPCs()
+    def raftElectionProtocol(self):
+        # print("ELECT CANDIDATE")
+        # convert to candidate
+        self.STATUS = "candidate"
+        # increment currentTerm
+        self.CURRENT_TERM += 1
+        self.VOTES = 1
+        self.LAST_UPDATED_TIME = time.time()
+        self.sendRequestVoteRPCs()
 
-        def sendRequestVoteRPCs(self):
-                for r in self.replica_ids:
-                        print("Replica #: ", r)
-                        print('Commit index:', self.COMMIT_INDEX)
-                        request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
-                                           'term': self.CURRENT_TERM, 'candidateId': self.my_id,
-                                           'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
-                        self.sendDict(request)
+    def sendRequestVoteRPCs(self):
+        for r in self.replica_ids:
+            # print("Replica #: ", r)
+            # print('Commit index:', self.COMMIT_INDEX)
+            request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
+                       'term': self.CURRENT_TERM, 'candidateId': self.my_id,
+                       'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
+            self.sendDict(request)
 
-        def lastLogIndex(self):
-                return len(self.LOG)
+    def lastLogIndex(self):
+        return len(self.LOG)
 
-        def lastLogTerm(self):
-                length = len(self.LOG)
-                if length == 0:
-                        return self.CURRENT_TERM
-                else:
-                        return self.LOG[length - 1]['term']
+    def lastLogTerm(self):
+        length = len(self.LOG)
+        if length == 0:
+            return self.CURRENT_TERM
+        else:
+            return self.LOG[length - 1]['term']
 
-        def respondToRequestVoteRPCs(self, msg):
-                # TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
-                response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
-                                        'term': self.CURRENT_TERM}
-                if msg['term'] < self.CURRENT_TERM:
-                        response['voteGranted'] = False
-                elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
-                        response['voteGranted'] = True
-                        self.VOTED_FOR = msg['src']
-                        self.LAST_UPDATED_TIME = time.time()
-                else:
-                        response['voteGranted'] = False
+    def respondToRequestVoteRPCs(self, msg):
+        # TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
+        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
+                    'term': self.CURRENT_TERM}
+        if msg['term'] < self.CURRENT_TERM:
+            response['voteGranted'] = False
+        elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg[
+            'lastLogTerm'] >= self.lastLogTerm():
+            response['voteGranted'] = True
+            self.VOTED_FOR = msg['src']
+            self.LAST_UPDATED_TIME = time.time()
+        else:
+            response['voteGranted'] = False
 
-                self.sendDict(response)
+        self.sendDict(response)
 
-        def handleRequestVoteRPCResult(self, msg):
-                if msg['voteGranted']:
-                        self.VOTES +=1
+    def handleRequestVoteRPCResult(self, msg):
+        if msg['voteGranted']:
+            self.VOTES += 1
 
-                if self.VOTES >= self.QUORUM:
-                        print("WON THE ELECTION!!: ", self.my_id)
-                        self.becomeLeader()
-                        self.sendHeartbeat()
+        if self.VOTES >= self.QUORUM:
+            # print("WON THE ELECTION!!: ", self.my_id)
+            self.becomeLeader()
+            self.sendHeartbeat()
 
-        def becomeLeader(self):
-                self.STATUS = "leader"
-                self.LEADER_ID = self.my_id
-                self.VOTES = 0
-                for r in self.replica_ids:
-                        self.MATCH_INDEX[r] = 0
-                        self.NEXT_INDEX[r] = self.lastLogIndex() + 1
+    def becomeLeader(self):
+        self.STATUS = "leader"
+        self.LEADER_ID = self.my_id
+        self.VOTES = 0
+        for r in self.replica_ids:
+            self.MATCH_INDEX[r] = 0
+            self.NEXT_INDEX[r] = self.lastLogIndex() + 1
 
-        def sendHeartbeat(self):
-                for r in self.replica_ids:
-                        # set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
-                        append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
-                                          'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
-                                          'prevLogIndex': self.lastLogIndex(), 'prevLogTerm': self.lastLogTerm(),
-                                          'entries': [], 'leaderCommit': self.COMMIT_INDEX}
-                        self.sendDict(append)
+    def sendHeartbeat(self):
+        self.LAST_UPDATED_TIME = time.time()
+        for r in self.replica_ids:
+            # set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
+            append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
+                      'term': self.CURRENT_TERM, 'leaderId': self.LEADER_ID,
+                      'prevLogIndex': self.lastLogIndex(), 'prevLogTerm': self.lastLogTerm(),
+                      'entries': [], 'leaderCommit': self.COMMIT_INDEX}
+            self.sendDict(append)
 
-        def recvHeartbeat(self, msg):
-                # once you receive heartbeat, regardless of if youre responding true or false,
-                # still accept src as new leader
-                self.LEADER_ID = msg['src']
-                self.STATUS = 'follower'
-                # HEARD FROM LEADER!!
-                self.LAST_UPDATED_TIME = time.time()
-                response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
-                                        'term': self.CURRENT_TERM}
-                # TODO: should i be updating term here?
-                if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-                        self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
-                        self.updateCommitIdx(msg['leaderCommit'])
-                        response['success'] = False
-                else:
-                        self.updateCommitIdx(msg['leaderCommit'])
-                        response['success'] = True
-                # TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
-                # self.sendDict(response)
+    def recvHeartbeat(self, msg):
+        # once you receive heartbeat, regardless of if youre responding true or false,
+        # still accept src as new leader
+        self.LEADER_ID = msg['src']
+        self.STATUS = 'follower'
+        # HEARD FROM LEADER!!
+        self.LAST_UPDATED_TIME = time.time()
+        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+                    'term': self.CURRENT_TERM}
+        # TODO: should i be updating term here?
+        if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+            self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
+            self.updateCommitIdx(msg['leaderCommit'])
+            response['success'] = False
+        else:
+            self.updateCommitIdx(msg['leaderCommit'])
+            response['success'] = True
+        # TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
+        # self.sendDict(response)
 
+    # matches terms
+    def matchesTerms(self, prevLogIdx, prevLogTerm):
+        if prevLogIdx == 0:
+            return True
+        # make sure my log is same length in the first place
+        elif len(self.LOG) - 1 >= prevLogIdx:
+            if self.LOG[prevLogIdx]['term'] == prevLogTerm:
+                return True
+        else:
+            return False
 
-        # matches terms
-        def matchesTerms(self, prevLogIdx, prevLogTerm):
-                if prevLogIdx == 0:
-                        return True
-                # make sure my log is same length in the first place
-                elif len(self.LOG) - 1 >= prevLogIdx:
-                        if self.LOG[prevLogIdx]['term'] == prevLogTerm:
-                                return True
-                else:
-                        return False
-
-        # TODO: confused about the purpose of this
-        # ohh i get it. its if leader has more updated commits but didnt send all entires
-        # necessary for me to have that many commmits. so i need to make my commit Idx be whattever
-        # leader sent me and not exactly what leader has
-        def updateCommitIdx(self, leaderCommit):
-                if leaderCommit > self.COMMIT_INDEX:
-                        self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
+    # TODO: confused about the purpose of this
+    # ohh i get it. its if leader has more updated commits but didnt send all entires
+    # necessary for me to have that many commmits. so i need to make my commit Idx be whattever
+    # leader sent me and not exactly what leader has
+    def updateCommitIdx(self, leaderCommit):
+        if leaderCommit > self.COMMIT_INDEX:
+            self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
 
         # AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
-        def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
-                # make sure my log is same length in the first place
-                if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
-                        if self.LOG[prevLogIdx]['term'] != prevLogTerm:
-                                # only keep everything up to but not including prevLogIdx
-                                # This is Nicole's add
-                                self.COMMIT_INDEX = msg['prevLogIdx'] + 1
-                                self.LOG = self.LOG[:prevLogIdx]
 
-        def appendNewEntriesToLog(self, entries):
-                self.LOG.append(entries)
-                print("PRINTING LOG")
-                print(self.LOG)
+    def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
+        # make sure my log is same length in the first place
+        if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
+            if self.LOG[prevLogIdx]['term'] != prevLogTerm:
+                # only keep everything up to but not including prevLogIdx
+                # This is Nicole's add
+                self.COMMIT_INDEX = msg['prevLogIndex'] + 1
+                self.LOG = self.LOG[:prevLogIdx]
 
-        def isLeader(self):
-                return self.my_id == self.LEADER_ID
+    def appendNewEntriesToLog(self, entries):
+        self.LOG.append(entries)
+        # print("PRINTING LOG")
+        # print(self.LOG)
 
-        def handleGet(self, msg):
-                print("GET MSG: ", msg['key'])
-                print("FOR MID: ", msg['MID'])
-                print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-                print("PRINTING CURRENT STATE_MACHINE")
-                for k in self.STATE_MACHINE.keys():
-                        print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
-                # self.updateLogLeader(msg)
-                #self.broadcastTransaction(msg)
-                #TODO: if transaction passes
-                # self.updateStateMachine(msg)
-                self.successGetToClient(msg)
+    def isLeader(self):
+        return self.my_id == self.LEADER_ID
 
-        def handlePut(self, msg):
-                print("VALUES: ", msg['key'])
-                print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
-                self.updateLogLeader(msg)
-                self.broadcastTransaction(msg)
-                self.updateStateMachine(msg)
-                #TODO: if transaction passes
-                self.successPutToClient(msg)
+    def handleGet(self, msg):
+        # print("GET MSG: ", msg['key'])
+        # print("FOR MID: ", msg['MID'])
+        # print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
+        # print("PRINTING CURRENT STATE_MACHINE")
+        # for k in self.STATE_MACHINE.keys():
+        #     print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+        # self.updateLogLeader(msg)
+        # self.broadcastTransaction(msg)
+        # TODO: if transaction passes
+        # self.updateStateMachine(msg)
+        self.successGetToClient(msg)
 
+    def handlePut(self, msg):
+        # print("VALUES: ", msg['key'])
+        # print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
+        self.updateLogLeader(msg)
+        self.broadcastTransaction()
+        self.updateStateMachine(msg)
+        # TODO: if transaction passes
+        self.successPutToClient(msg)
 
-        def updateLogLeader(self, msg):
-                self.LOG.append({'idx': len(self.LOG) + 1, 'command':msg, 'term': self.CURRENT_TERM})
-                self.COMMIT_INDEX += 1
+    def updateLogLeader(self, msg):
+        self.LOG.append({'idx': len(self.LOG) + 1, 'command': msg, 'term': self.CURRENT_TERM})
+        self.COMMIT_INDEX += 1
 
-        def updateStateMachine(self, msg):
-                if msg['type'] == 'put':
-                        self.STATE_MACHINE[msg['key']] = msg['value']
-                        # todo: i hope indices line up :/
-                        # self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
-                elif msg['type'] == 'get':
-                        print("ADD GET TO STATE MACHINE")
-                        self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+    def updateStateMachine(self, msg):
+        if msg['type'] == 'put':
+            self.STATE_MACHINE[msg['key']] = msg['value']
+        # todo: i hope indices line up :/
+        # self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+        elif msg['type'] == 'get':
+            # print("ADD GET TO STATE MACHINE")
+            self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
-                self.LAST_APPLIED +=1
+        self.LAST_APPLIED += 1
 
-        def broadcastTransaction(self, msg):
-                for r in self.replica_ids:
-                        if self.NEXT_INDEX[r] <= self.lastLogIndex():
-                                self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
+    def broadcastTransaction(self):
+        for r in self.replica_ids:
+            if self.NEXT_INDEX[r] <= self.lastLogIndex():
+                self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
 
-        def sendAppendEntriesRPC(self, entries, replica):
-                message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
-                                   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
-                                   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
-                print(message)
-                self.sendDict(message)
+    def sendAppendEntriesRPC(self, entries, replica):
+        message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
+                   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
+                   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+        # print(message)
+        self.sendDict(message)
 
-        def respondToAppendEntriesRPC(self, msg):
-                self.LAST_UPDATED_TIME = time.time()
-                response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
-                                        'term': self.CURRENT_TERM}
-                # TODO: should i be updating term here?
-                if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-                        self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
-                        response['success'] = False
-                else:
-                        print("ENTRIES:")
-                        print(msg['entries'])
-                        self.appendNewEntriesToLog(msg['entries'])
-                        response['success'] = True
+    def respondToAppendEntriesRPC(self, msg):
+        self.LAST_UPDATED_TIME = time.time()
+        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+                    'term': self.CURRENT_TERM}
+        # TODO: should i be updating term here?
+        if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+            self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
+            response['success'] = False
+        else:
+            # print("ENTRIES:")
+            # print(msg['entries'])
+            self.appendNewEntriesToLog(msg['entries'])
+            response['success'] = True
 
-                self.updateCommitIdx(msg['leaderCommit'])
-                self.sendDict(response)
+        self.updateCommitIdx(msg['leaderCommit'])
+        self.sendDict(response)
 
-        def handleAppendEntriesRPCResult(self, msg):
-                if msg['success']:
-                # update nextIndex and matchIndex for follower
-                        self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
-                        self.MATCH_INDEX[msg['src']] = self.lastLogIndex()
-                else:
-                        self.NEXT_INDEX[msg['src']] -= 1
-                        self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
+    def handleAppendEntriesRPCResult(self, msg):
+        if msg['success']:
+            # update nextIndex and matchIndex for follower
+            self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
+            self.MATCH_INDEX[msg['src']] = self.lastLogIndex()
+        else:
+            self.NEXT_INDEX[msg['src']] -= 1
+            self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
 
+    def successGetToClient(self, msg):
+        value = self.STATE_MACHINE.get(msg['key'])
+        response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
 
-        def successGetToClient(self, msg):
-                value = self.STATE_MACHINE.get(msg['key'])
-                response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
+        if value:
+            response['value'] = value
+        else:
+            response['value'] = ""
+        self.sendDict(response)
 
-                if value:
-                        response['value'] = value
-                else:
-                        response['value'] = ""
-                self.sendDict(response)
+    def successPutToClient(self, msg):
+        response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
+                    "MID": msg['MID']}
+        self.sendDict(response)
 
-        def successPutToClient(self, msg):
-                response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
-                                        "MID": msg['MID']}
-                self.sendDict(response)
 
 server = RaftServer(sys.argv[1], sys.argv[2:])
 
 while True:
-        ready = select.select([server.sock], [], [], 0.1)[0]
+    ready = select.select([server.sock], [], [], 0.1)[0]
 
-        if server.electionTimeout():
-                print("ELECTION TIMEOUT")
-                server.raftElectionProtocol()
+    if server.electionTimeout():
+        # print("ELECTION TIMEOUT")
+        server.raftElectionProtocol()
 
-        # periodically sending heartbeats to avoid timeout
-        if server.isLeader():
-                server.sendHeartbeat()
+    # periodically sending heartbeats to avoid timeout
+    if server.isLeader() and server.electionTimeout():
+        server.sendHeartbeat()
 
-        if server.sock in ready:
-                msg_raw = server.sock.recv(32768)
+    if server.sock in ready:
+        msg_raw = server.sock.recv(32768)
 
-                if len(msg_raw) == 0: continue
-                msg = json.loads(msg_raw)
+        if len(msg_raw) == 0: continue
+        msg = json.loads(msg_raw)
 
-
-                if server.isLeader() and msg['type'] in ['get', 'put']:
-                        if msg['type'] == 'get':
-                                server.handleGet(msg)
-                        elif msg['type'] == 'put':
-                                server.handlePut(msg)
-                elif msg['type'] in ['get', 'put']:
-                        server.sendRedirectMsg(msg)
-                elif msg['type'] == 'Heartbeat':
-                        server.recvHeartbeat(msg)
-                elif msg['type'] == 'sendRequestVoteRPC':
-                        server.respondToRequestVoteRPCs(msg)
-                elif msg['type'] == 'respondToRequestVoteRPC':
-                        server.handleRequestVoteRPCResult(msg)
-                elif msg['type'] == 'sendAppendEntriesRPC':
-                        server.respondToAppendEntriesRPC(msg)
-                elif msg['type'] == 'respToAppendEntriesRPC':
-                        server.handleAppendEntriesRPCResult(msg)
+        if server.isLeader() and msg['type'] in ['get', 'put']:
+            if msg['type'] == 'get':
+                server.handleGet(msg)
+            elif msg['type'] == 'put':
+                server.handlePut(msg)
+        elif msg['type'] in ['get', 'put']:
+            server.sendRedirectMsg(msg)
+        elif msg['type'] == 'Heartbeat':
+            server.recvHeartbeat(msg)
+        elif msg['type'] == 'sendRequestVoteRPC':
+            server.respondToRequestVoteRPCs(msg)
+        elif msg['type'] == 'respondToRequestVoteRPC':
+            server.handleRequestVoteRPCResult(msg)
+        elif msg['type'] == 'sendAppendEntriesRPC':
+            server.respondToAppendEntriesRPC(msg)
+        elif msg['type'] == 'respToAppendEntriesRPC':
+            server.handleAppendEntriesRPCResult(msg)
