@@ -221,7 +221,9 @@ class RaftServer:
 		# for l in self.LOG:
 		# 	print(l['idx'], " {", l['command']['key'], " ", l['command']['value'], "} ", l['term'])
 		for r in self.replica_ids:
+			print("BROADCASTING TO: ", r)
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
+				print("FIRST IF PASSED: self.NEXT_INDEX[r] <= self.lastLogIndex()")
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
 
 	def sendAppendEntriesRPC(self, entries, replica):
@@ -231,14 +233,17 @@ class RaftServer:
 		self.sendDict(message)
 
 	def respondToAppendEntriesRPC(self, msg):
+		print("RECEIVED A BROADCAST")
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToAppendEntriesRPC',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			print("UPDATE FAILED")
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 		else:
+			print("UPDATE SUCCESSFUL")
 			self.appendNewEntriesToLog(msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
