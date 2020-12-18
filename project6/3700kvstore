@@ -92,9 +92,8 @@ class RaftServer:
 		if length == 0:
 			return 0
 		else:
-			for l in self.LOG:
-				print(l)
-			return self.LOG[length - 1]['term']
+			lastTerm = self.LOG[length - 1]['term']
+			return lastTerm
 
 
 	def respondToRequestVoteRPCs(self, msg):
