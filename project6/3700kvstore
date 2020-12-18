@@ -178,12 +178,12 @@ class RaftServer:
 		return self.my_id == self.LEADER_ID
 
 	def handleGet(self, msg):
-		# print("GET MSG: ", msg['key'])
-		# print("FOR MID: ", msg['MID'])
-		# print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-		# print("PRINTING CURRENT STATE_MACHINE FOR: ", self.my_id)
-		# for k in self.STATE_MACHINE.keys():
-		# 	print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+		print("GET MSG: ", msg['key'])
+		print("FOR MID: ", msg['MID'])
+		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
+		print("PRINTING CURRENT STATE_MACHINE FOR: ", self.my_id)
+		for k in self.STATE_MACHINE.keys():
+			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		# self.updateLogLeader(msg)
 		#self.broadcastTransaction(msg)
 		# self.updateStateMachine(msg)
