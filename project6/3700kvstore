@@ -102,7 +102,7 @@ class RaftServer:
 			self.VOTES +=1
 
 		if self.VOTES >= self.QUORUM:
-			# print("WON THE ELECTION!!: ", self.my_id)
+			print("WON THE ELECTION!!: ", self.my_id)
 			self.becomeLeader()
 			self.sendHeartbeat()
 
