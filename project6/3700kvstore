@@ -63,7 +63,6 @@ class RaftServer:
 
 
 	def raftElectionProtocol(self):
-		# print("ELECT CANDIDATE")
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -75,8 +74,6 @@ class RaftServer:
 
 	def sendRequestVoteRPCs(self):
 		for r in self.replica_ids:
-			# print("Replica #: ", r)
-			# print('Commit index:', self.COMMIT_INDEX)
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
 					   'term': self.CURRENT_TERM, 'candidateId': self.my_id,
 					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
@@ -104,9 +101,7 @@ class RaftServer:
 		if length == 0:
 			return 0
 		else:
-			print("PREVLOGINDEX: ", prevLogIndex)
 			prevTerm = self.LOG[[prevLogIndex - 1]['term']]
-			print("PREVTERM: ", prevTerm)
 			return prevTerm
 
 	def updateTerm(self, term):
@@ -176,18 +171,15 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC'}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM:
-			print(self.my_id, " RECVHEARTBEAT: MSG-TERM < CURRENT-TERM")
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-			print(self.my_id, " RECVHEARTBEAT: PREV DOESNT MATCH MY TERM")
 			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
-			print(self.my_id, " RECVHEARTBEAT: SUCCESS: TRUE")
 			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
@@ -200,10 +192,6 @@ class RaftServer:
 
 
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
-		print("IN MATCHES TERM")
-		print("PREVLOGIDX: ", prevLogIdx)
-		print("LEN SELF.LOG: ", len(self.LOG))
-		print("PREVLOGTERM: ", prevLogTerm)
 		if prevLogIdx == 0 and len(self.LOG) == 0 and prevLogTerm == 0:
 			return True
 		# make sure my log is same length in the first place
@@ -243,12 +231,6 @@ class RaftServer:
 
 
 	def handleGet(self, msg):
-		# print("GET MSG: ", msg['key'])
-		# print("FOR MID: ", msg['MID'])
-		# print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-		# print("PRINTING CURRENT STATE_MACHINE")
-		# for k in self.STATE_MACHINE.keys():
-		#     print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		# self.updateLogLeader(msg)
 		# self.broadcastTransaction(msg)
 		# TODO: if transaction passes
@@ -257,8 +239,6 @@ class RaftServer:
 
 
 	def handlePut(self, msg):
-		# print("VALUES: ", msg['key'])
-		# print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
@@ -275,10 +255,6 @@ class RaftServer:
 		if msg['type'] == 'put':
 			self.STATE_MACHINE[msg['key']] = msg['value']
 		# todo: i hope indices line up :/
-		# self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
-		# elif msg['type'] == 'get':
-		# 	print("ADD GET TO STATE MACHINE")
-		# 	self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
 		self.LAST_APPLIED += 1
 
@@ -293,7 +269,6 @@ class RaftServer:
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.prevLogIndex(replica),
 				   'prevLogTerm': self.prevLogTerm(replica), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
-		# print(message)
 		self.sendDict(message)
 
 	# updating term no matter what if the msg's term is > than mine
@@ -302,18 +277,15 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC'}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM:
-			print("MSG-TERM < CURRENT-TERM")
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-			print("PREV DOESNT MATCH MY TERM")
 			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
-			print("SUCCESS: TRUE")
 			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
@@ -323,21 +295,15 @@ class RaftServer:
 
 
 	def handleAppendEntriesRPCResult(self, msg):
-		print("JANDLE APPEN ENTRIES RPC RESULT FOR: "+ msg['src'])
-		print("SELF.LASTLOGIDX: ", self.lastLogIndex())
-		print("THE LOG: ", self.LOG)
 		if msg['success']:
 			# update nextIndex and matchIndex for follower
 			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
-			print(self.NEXT_INDEX[msg['src']])
 			self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']] - 1
-			print(self.MATCH_INDEX[msg['src']])
 		else:
 			self.updateTerm(msg['term'])
 			# if i am still leader (aka their false response wasn't because my term was behind)
 			if self.STATUS == "leader":
 				self.NEXT_INDEX[msg['src']] -= 1
-				print("NEW NEXT INDEX FOR: ", msg['src'], " IS: ", self.NEXT_INDEX[msg['src']])
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']] - 1:], msg['src'])
 
 
