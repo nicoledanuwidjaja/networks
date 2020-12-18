@@ -172,7 +172,7 @@ class RaftServer:
 				self.LOG = self.LOG[:prevLogIdx]
 
 	def appendNewEntriesToLog(self, entries):
-		None
+		self.LOG.append(entries)
 
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID
@@ -242,7 +242,14 @@ class RaftServer:
 
 		self.sendDict(response)
 
-
+	def handleAppendEntriesRPCResult(self, msg):
+		if msg['success']:
+			# update nextIndex and matchIndex for follower
+			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
+			self.MATCH_INDEX[msg['src']] = self.lastLogIndex()
+		else:
+			self.NEXT_INDEX[msg['src']] -= 1
+			self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
 
 
 
@@ -294,3 +301,7 @@ while True:
 			server.respondToRequestVoteRPCs(msg)
 		elif msg['type'] == 'respondToRequestVoteRPC':
 			server.handleRequestVoteRPCResult(msg)
+		elif msg['type'] == 'sendAppendEntriesRPC':
+			server.respondToAppendEntriesRPC(msg)
+		elif msg['type'] == 'respondToAppendEntriesRPC':
+			server.handleAppendEntriesRPCResult(msg)
