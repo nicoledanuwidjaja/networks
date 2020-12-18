@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys, socket, select, time, json, random, math
 
@@ -170,11 +170,8 @@ class RaftServer:
         if prevLogIdx == 0:
             return True
         # make sure my log is same length in the first place
-        # TODO: 173 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
-        elif len(self.LOG) >= prevLogIdx:
-            dictionary = self.LOG[prevLogIdx]
-            print("DICTIONARY: ", dictionary)
-            if dictionary['term'] == prevLogTerm:
+        elif len(self.LOG) - 1 >= prevLogIdx:
+            if self.LOG[prevLogIdx]['term'] == prevLogTerm:
                 return True
         else:
             return False
@@ -194,11 +191,8 @@ class RaftServer:
 
     def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
         # make sure my log is same length in the first place
-        # TODO: 195 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
-        if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
-            dictionary = self.LOG[prevLogIdx]
-            print("DICTIONARY: ", dictionary)
-            if dictionary['term'] != prevLogTerm:
+        if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
+            if self.LOG[prevLogIdx]['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
                 # This is Nicole's add
                 self.COMMIT_INDEX = msg['prevLogIndex'] + 1
