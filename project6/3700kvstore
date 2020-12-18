@@ -173,6 +173,7 @@ class RaftServer:
 		# TODO: 173 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
         elif len(self.LOG) >= prevLogIdx:
             dictionary = self.LOG[prevLogIdx]
+			print("DICTIONARY: ", dictionary)
             if dictionary['term'] == prevLogTerm:
                 return True
         else:
@@ -196,6 +197,7 @@ class RaftServer:
 		# TODO: 195 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
         if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
             dictionary = self.LOG[prevLogIdx]
+			print("DICTIONARY: ", dictionary)
             if dictionary['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
                 # This is Nicole's add
