@@ -63,6 +63,7 @@ class RaftServer:
 		# increment currentTerm
 		self.CURRENT_TERM +=1
 		self.VOTES = 1
+		self.VOTED_FOR = self.my_id
 		self.sendRequestVoteRPCs()
 
 	def sendRequestVoteRPCs(self):
