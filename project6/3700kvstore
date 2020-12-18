@@ -229,19 +229,14 @@ class RaftServer:
 	def handleConflictingEntries(self, prevLogIdx, prevLogTerm, entries):
 		# make sure my log is same length in the first place
 		if prevLogIdx > 0 and len(self.LOG) == prevLogIdx:
-			self.LOG.append(entries)
+			if len(entries) > 0:
+				self.LOG.append(entries)
 		elif len(self.LOG) >= prevLogIdx:
 			# only keep everything up to but not including prevLogIdx
 			self.LOG = self.LOG[:prevLogIdx]
 			# then append any new entries not already in log
-			self.LOG.append(entries)
-
-
-	def appendNewEntriesToLog(self, entries):
-		self.LOG.append(entries)
-		# print("PRINTING LOG")
-		# print(self.LOG)
-
+			if len(entries) > 0:
+				self.LOG.append(entries)
 
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID and self.STATUS == "leader"
