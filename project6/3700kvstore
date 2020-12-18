@@ -63,7 +63,7 @@ class RaftServer:
 		# increment currentTerm
 		self.CURRENT_TERM +=1
 		self.VOTES = 1
-		self.VOTED_FOR = self.my_id
+		# self.VOTED_FOR = self.my_id
 		self.sendRequestVoteRPCs()
 
 	def sendRequestVoteRPCs(self):
@@ -283,7 +283,7 @@ server = RaftServer(sys.argv[1], sys.argv[2:])
 
 while True:
 	ready = select.select([server.sock], [], [], 0.1)[0]
-
+	print("LOOP FOR: ", server.my_id)
 	if server.electionTimeout():
 		print("ELECTION TIMEOUT FOR: ", server.my_id)
 		server.LAST_UPDATED_TIME = time.time()
