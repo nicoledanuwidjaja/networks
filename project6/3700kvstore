@@ -98,9 +98,11 @@ class RaftServer:
 	def prevLogTerm(self, r):
 		prevLogIndex = self.NEXT_INDEX[r] - 1
 		length = len(self.LOG)
+		print("SELF.LOG: ", self.LOG)
 		if length == 0:
 			return 0
 		else:
+			print("PREVLOGIDX: " ,prevLogIndex)
 			prevTerm = self.LOG[[prevLogIndex - 1]['term']]
 			return prevTerm
 
@@ -152,6 +154,7 @@ class RaftServer:
 
 	def sendHeartbeat(self):
 		self.LAST_UPDATED_TIME = time.time()
+		print("SENDING HEARTBEAT FROM: ", self.my_id)
 		for r in self.replica_ids:
 			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
 			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
@@ -162,6 +165,7 @@ class RaftServer:
 
 
 	def recvHeartbeat(self, msg):
+		print("RECEIVED HEARTBEAT FROM: ", msg['src'])
 		# once you receive heartbeat, regardless of if youre responding true or false,
 		# still accept src as new leader
 		self.LEADER_ID = msg['src']
@@ -171,15 +175,19 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC'}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM:
+			print("HEARTBEAT MSG[TERM] < CURRENT TERM")
+			print("MSG[TERM]: ", msg['term'], " CURRENT_TERM: ", self.CURRENT_TERM)
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			print("HEARTBEAT DOESN'T MATCH TERMS")
 			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
+			print("HEARTBEAT SUCCESSFUL HEARTBEAT")
 			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
@@ -239,6 +247,7 @@ class RaftServer:
 
 
 	def handlePut(self, msg):
+		print("HANDLING PUT: ", self.my_id)
 		self.updateLogLeader(msg)
 		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
@@ -260,6 +269,7 @@ class RaftServer:
 
 
 	def broadcastTransaction(self, msg):
+		print("BROADCASTING A TRANSACTION: ", self.my_id)
 		for r in self.replica_ids:
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r] - 1:], r)
@@ -299,6 +309,7 @@ class RaftServer:
 			# update nextIndex and matchIndex for follower
 			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
 			self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']] - 1
+			print("CORRESPONDING REPLICA INDICES UPDATED FOR: ", msg['src'])
 		else:
 			self.updateTerm(msg['term'])
 			# if i am still leader (aka their false response wasn't because my term was behind)
@@ -337,7 +348,7 @@ while True:
 		server.raftElectionProtocol()
 
 	# periodically sending heartbeats to avoid timeout
-	if server.isLeader() and server.electionTimeout():
+	if server.isLeader():
 		server.sendHeartbeat()
 
 	if not server.isLeader():
