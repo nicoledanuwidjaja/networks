@@ -176,15 +176,18 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC'}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM:
+			print(self.my_id, " RECVHEARTBEAT: MSG-TERM < CURRENT-TERM")
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
+			print(self.my_id, " RECVHEARTBEAT: PREV DOESNT MATCH MY TERM")
 			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
+			print(self.my_id, " RECVHEARTBEAT: SUCCESS: TRUE")
 			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
