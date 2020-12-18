@@ -63,7 +63,6 @@ class RaftServer:
 		# increment currentTerm
 		self.CURRENT_TERM +=1
 		self.VOTES = 1
-		self.LAST_UPDATED_TIME = time.time()
 		self.sendRequestVoteRPCs()
 
 	def sendRequestVoteRPCs(self):
@@ -130,7 +129,6 @@ class RaftServer:
 		self.LEADER_ID = msg['src']
 		self.STATUS = 'follower'
 		# HEARD FROM LEADER!!
-		self.LAST_UPDATED_TIME = time.time()
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
@@ -230,7 +228,6 @@ class RaftServer:
 		self.sendDict(message)
 
 	def respondToAppendEntriesRPC(self, msg):
-		self.LAST_UPDATED_TIME = time.time()
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToAppendEntriesRPC',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
@@ -278,6 +275,7 @@ while True:
 
 	if server.electionTimeout():
 		# print("ELECTION TIMEOUT")
+		server.LAST_UPDATED_TIME = time.time()
 		server.raftElectionProtocol()
 
 	# periodically sending heartbeats to avoid timeout
@@ -299,12 +297,15 @@ while True:
 		elif msg['type'] in ['get', 'put']:
 			server.sendRedirectMsg(msg)
 		elif msg['type'] == 'Heartbeat':
+			server.LAST_UPDATED_TIME = time.time()
 			server.recvHeartbeat(msg)
 		elif msg['type'] == 'sendRequestVoteRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.respondToRequestVoteRPCs(msg)
 		elif msg['type'] == 'respondToRequestVoteRPC':
 			server.handleRequestVoteRPCResult(msg)
 		elif msg['type'] == 'sendAppendEntriesRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.respondToAppendEntriesRPC(msg)
 		elif msg['type'] == 'respondToAppendEntriesRPC':
 			server.handleAppendEntriesRPCResult(msg)
