@@ -87,7 +87,7 @@ class RaftServer:
 
 	def respondToRequestVoteRPCs(self, msg):
 		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
-		response = {'src': msg['src'], 'dst': msg['dst'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
 					'term': self.CURRENT_TERM}
 		if msg['term'] < self.CURRENT_TERM:
 			response['voteGranted'] = False
