@@ -216,9 +216,9 @@ class RaftServer:
 		self.LAST_APPLIED +=1
 
 	def broadcastTransaction(self, msg):
-		print("LOG IS")
-		for l in self.LOG:
-			print(l['idx'], " {", l['command']['key'], " ", l['command']['value'], "} ", l['term'])
+		# print("LOG IS")
+		# for l in self.LOG:
+		# 	print(l['idx'], " {", l['command']['key'], " ", l['command']['value'], "} ", l['term'])
 		for r in self.replica_ids:
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
