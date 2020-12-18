@@ -178,7 +178,7 @@ class RaftServer:
 		return self.my_id == self.LEADER_ID
 
 	def handleGet(self, msg):
-		print("GET MSG: ", msg['key'])
+		print("GET MSG FOR ", self.my_id,  " : ", msg['key'])
 		print("FOR MID: ", msg['MID'])
 		print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
 		print("PRINTING CURRENT STATE_MACHINE FOR: ", self.my_id)
@@ -216,6 +216,7 @@ class RaftServer:
 		self.LAST_APPLIED +=1
 
 	def broadcastTransaction(self, msg):
+		print("LOG IS: ", self.LOG)
 		for r in self.replica_ids:
 			if self.NEXT_INDEX[r] <= self.lastLogIndex():
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
