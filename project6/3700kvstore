@@ -190,7 +190,7 @@ class RaftServer:
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
-		# print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
+		print("PUT MSG FOR ", self.my_id, " : [", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		# TODO
 		#self.broadcastTransaction(msg)
