@@ -288,7 +288,6 @@ server = RaftServer(sys.argv[1], sys.argv[2:])
 
 while True:
 	ready = select.select([server.sock], [], [], 0.1)[0]
-	print("LOOP FOR: ", server.my_id)
 	if server.electionTimeout():
 		print("ELECTION TIMEOUT FOR: ", server.my_id)
 		server.LAST_UPDATED_TIME = time.time()
