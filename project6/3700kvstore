@@ -192,8 +192,7 @@ class RaftServer:
     def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
         # make sure my log is same length in the first place
         if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
-            dictionary = self.LOG[prevLogIdx]
-            if dictionary['term'] != prevLogTerm:
+            if self.LOG[prevLogIdx]['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
                 # This is Nicole's add
                 self.COMMIT_INDEX = msg['prevLogIndex'] + 1
@@ -252,7 +251,6 @@ class RaftServer:
 
 
     def broadcastTransaction(self, msg):
-        self.LAST_UPDATED_TIME = time.time()
         for r in self.replica_ids:
             if self.NEXT_INDEX[r] <= self.lastLogIndex():
                 self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
