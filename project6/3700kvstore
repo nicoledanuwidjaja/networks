@@ -284,7 +284,7 @@ while True:
 	ready = select.select([server.sock], [], [], 0.1)[0]
 
 	if server.electionTimeout():
-		# print("ELECTION TIMEOUT")
+		print("ELECTION TIMEOUT FOR: ", server.my_id)
 		server.LAST_UPDATED_TIME = time.time()
 		server.raftElectionProtocol()
 
