@@ -333,6 +333,7 @@ server = RaftServer(sys.argv[1], sys.argv[2:])
 while True:
 	ready = select.select([server.sock], [], [], 0.1)[0]
 	if server.electionTimeout() and not server.isLeader():
+		print("ELECTION TIMEOUT AND IM NOT LEADER: ", server.my_id)
 		server.raftElectionProtocol()
 
 	# periodically sending heartbeats to avoid timeout
