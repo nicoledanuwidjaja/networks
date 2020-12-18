@@ -149,7 +149,7 @@ class RaftServer:
         self.STATUS = 'follower'
         # HEARD FROM LEADER!!
         self.LAST_UPDATED_TIME = time.time()
-        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC',
                     'term': self.CURRENT_TERM}
         # TODO: should i be updating term here?
         if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
@@ -160,7 +160,7 @@ class RaftServer:
             self.updateCommitIdx(msg['leaderCommit'])
             response['success'] = True
         # TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
-        # self.sendDict(response)
+        self.sendDict(response)
 
 
         # matches terms
@@ -170,8 +170,8 @@ class RaftServer:
         if prevLogIdx == 0:
             return True
         # make sure my log is same length in the first place
-        elif len(self.LOG) - 1 >= prevLogIdx:
-            if self.LOG[prevLogIdx]['term'] == prevLogTerm:
+        elif len(self.LOG) >= prevLogIdx:
+            if self.LOG[prevLogIdx - 1]['term'] == prevLogTerm:
                 return True
         else:
             return False
@@ -183,7 +183,7 @@ class RaftServer:
     # leader sent me and not exactly what leader has
 
     def updateCommitIdx(self, leaderCommit):
-        if leaderCommit > self.COMMIT_INDEX:
+        if leaderCommit >= self.COMMIT_INDEX:
             self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
 
         # AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
@@ -191,12 +191,13 @@ class RaftServer:
 
     def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
         # make sure my log is same length in the first place
-        if prevLogIdx > 0 and len(self.LOG) - 1 >= prevLogIdx:
-            if self.LOG[prevLogIdx]['term'] != prevLogTerm:
+        if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
+            if self.LOG[prevLogIdx - 1]['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
+                self.LOG = self.LOG[:prevLogIdx - 1]
                 # This is Nicole's add
-                self.COMMIT_INDEX = msg['prevLogIndex'] + 1
-                self.LOG = self.LOG[:prevLogIdx]
+                # self.COMMIT_INDEX = msg['prevLogIndex'] + 1
+
 
 
     def appendNewEntriesToLog(self, entries):
@@ -253,7 +254,7 @@ class RaftServer:
     def broadcastTransaction(self, msg):
         for r in self.replica_ids:
             if self.NEXT_INDEX[r] <= self.lastLogIndex():
-                self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
+                self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r] - 1:], r)
 
 
     def sendAppendEntriesRPC(self, entries, replica):
@@ -266,7 +267,7 @@ class RaftServer:
 
     def respondToAppendEntriesRPC(self, msg):
         self.LAST_UPDATED_TIME = time.time()
-        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+        response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC',
                     'term': self.CURRENT_TERM}
         # TODO: should i be updating term here?
         if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
@@ -286,10 +287,10 @@ class RaftServer:
         if msg['success']:
             # update nextIndex and matchIndex for follower
             self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
-            self.MATCH_INDEX[msg['src']] = self.lastLogIndex()
+            self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']] - 1
         else:
             self.NEXT_INDEX[msg['src']] -= 1
-            self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
+            self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']] - 1:], msg['src'])
 
 
     def successGetToClient(self, msg):
