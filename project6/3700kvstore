@@ -189,6 +189,9 @@ class RaftServer:
 
 	def handlePut(self, msg):
 		print("PUT MSG FOR ", self.my_id, " : [", msg['key'], " : ", msg['value'], "]")
+		print("PRINTING CURRENT STATE_MACHINE FOR: ", self.my_id)
+		for k in self.STATE_MACHINE.keys():
+			print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
 		self.updateLogLeader(msg)
 		# TODO
 		self.broadcastTransaction(msg)
