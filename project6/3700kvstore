@@ -63,7 +63,7 @@ class RaftServer:
 
 
     def raftElectionProtocol(self):
-        print("ELECT CANDIDATE")
+        # print("ELECT CANDIDATE")
         # convert to candidate
         self.STATUS = "candidate"
         # increment currentTerm
@@ -75,8 +75,8 @@ class RaftServer:
 
     def sendRequestVoteRPCs(self):
         for r in self.replica_ids:
-            print("Replica #: ", r)
-            print('Commit index:', self.COMMIT_INDEX)
+            # print("Replica #: ", r)
+            # print('Commit index:', self.COMMIT_INDEX)
             request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
                        'term': self.CURRENT_TERM, 'candidateId': self.my_id,
                        'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
@@ -117,7 +117,7 @@ class RaftServer:
             self.VOTES += 1
 
         if self.VOTES >= self.QUORUM:
-            print("WON THE ELECTION!!: ", self.my_id)
+            # print("WON THE ELECTION!!: ", self.my_id)
             self.becomeLeader()
             self.sendHeartbeat()
 
@@ -200,8 +200,8 @@ class RaftServer:
 
     def appendNewEntriesToLog(self, entries):
         self.LOG.append(entries)
-        print("PRINTING LOG")
-        print(self.LOG)
+        # print("PRINTING LOG")
+        # print(self.LOG)
 
 
     def isLeader(self):
@@ -209,12 +209,12 @@ class RaftServer:
 
 
     def handleGet(self, msg):
-        print("GET MSG: ", msg['key'])
-        print("FOR MID: ", msg['MID'])
-        print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
-        print("PRINTING CURRENT STATE_MACHINE")
-        for k in self.STATE_MACHINE.keys():
-            print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
+        # print("GET MSG: ", msg['key'])
+        # print("FOR MID: ", msg['MID'])
+        # print("KV IS : ", self.STATE_MACHINE.get(msg['key']))
+        # print("PRINTING CURRENT STATE_MACHINE")
+        # for k in self.STATE_MACHINE.keys():
+        #     print("[", k, " : ", self.STATE_MACHINE.get(k), "]")
         # self.updateLogLeader(msg)
         # self.broadcastTransaction(msg)
         # TODO: if transaction passes
@@ -223,8 +223,8 @@ class RaftServer:
 
 
     def handlePut(self, msg):
-        print("VALUES: ", msg['key'])
-        print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
+        # print("VALUES: ", msg['key'])
+        # print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
         self.updateLogLeader(msg)
         self.broadcastTransaction(msg)
         self.updateStateMachine(msg)
@@ -243,7 +243,7 @@ class RaftServer:
         # todo: i hope indices line up :/
         # self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
         elif msg['type'] == 'get':
-            print("ADD GET TO STATE MACHINE")
+            # print("ADD GET TO STATE MACHINE")
             self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
         self.LAST_APPLIED += 1
@@ -259,7 +259,7 @@ class RaftServer:
         message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
                    "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
                    'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
-        print(message)
+        # print(message)
         self.sendDict(message)
 
 
@@ -272,8 +272,8 @@ class RaftServer:
             self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'])
             response['success'] = False
         else:
-            print("ENTRIES:")
-            print(msg['entries'])
+            # print("ENTRIES:")
+            # print(msg['entries'])
             self.appendNewEntriesToLog(msg['entries'])
             response['success'] = True
 
@@ -314,7 +314,7 @@ while True:
     ready = select.select([server.sock], [], [], 0.1)[0]
 
     if server.electionTimeout():
-        print("ELECTION TIMEOUT")
+        # print("ELECTION TIMEOUT")
         server.raftElectionProtocol()
 
     # periodically sending heartbeats to avoid timeout
