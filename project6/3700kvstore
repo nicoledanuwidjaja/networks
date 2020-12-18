@@ -170,10 +170,10 @@ class RaftServer:
         if prevLogIdx == 0:
             return True
         # make sure my log is same length in the first place
-		# TODO: 173 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
+        # TODO: 173 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
         elif len(self.LOG) >= prevLogIdx:
             dictionary = self.LOG[prevLogIdx]
-			print("DICTIONARY: ", dictionary)
+            print("DICTIONARY: ", dictionary)
             if dictionary['term'] == prevLogTerm:
                 return True
         else:
@@ -194,10 +194,10 @@ class RaftServer:
 
     def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
         # make sure my log is same length in the first place
-		# TODO: 195 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
+        # TODO: 195 - GOT RID OF "-1" AFTER LEN(SELF.LOG)
         if prevLogIdx > 0 and len(self.LOG) >= prevLogIdx:
             dictionary = self.LOG[prevLogIdx]
-			print("DICTIONARY: ", dictionary)
+            print("DICTIONARY: ", dictionary)
             if dictionary['term'] != prevLogTerm:
                 # only keep everything up to but not including prevLogIdx
                 # This is Nicole's add
