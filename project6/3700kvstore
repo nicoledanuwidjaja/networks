@@ -329,6 +329,8 @@ class RaftServer:
 
 	def handleAppendEntriesRPCResult(self, msg):
 		print("JANDLE APPEN ENTRIES RPC RESULT FOR: "+ msg['src'])
+		print("SELF.LASTLOGIDX: ", self.lastLogIndex())
+		print("THE LOG: ", self.LOG)
 		if msg['success']:
 			# update nextIndex and matchIndex for follower
 			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
