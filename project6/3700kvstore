@@ -201,7 +201,7 @@ class RaftServer:
 			return True
 		# make sure my log is same length in the first place
 		elif len(self.LOG) == prevLogIdx:
-			if self.LOG[prevLogIdx - 1]['term'] == prevLogTerm:
+			if self.LOG[[prevLogIdx - 1]['term']] == prevLogTerm:
 				return True
 		else:
 			return False
