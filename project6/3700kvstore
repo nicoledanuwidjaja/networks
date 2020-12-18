@@ -327,6 +327,7 @@ class RaftServer:
 			# if i am still leader (aka their false response wasn't because my term was behind)
 			if self.STATUS == "leader":
 				self.NEXT_INDEX[msg['src']] -= 1
+				print("NEW NEXT INDEX FOR: ", msg['src'], " IS: ", self.NEXT_INDEX[msg['src']])
 				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']] - 1:], msg['src'])
 
 
