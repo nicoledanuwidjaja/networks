@@ -106,6 +106,7 @@ class RaftServer:
 	def handleRequestVoteRPCResult(self, msg):
 		if msg['voteGranted']:
 			self.VOTES +=1
+			print(self.my_id, " GOT A VOTE")
 
 		if self.VOTES >= self.QUORUM:
 			print("WON THE ELECTION!!: ", self.my_id)
@@ -113,6 +114,7 @@ class RaftServer:
 			self.sendHeartbeat()
 
 	def becomeLeader(self):
+		print(self.my_id, " BECAME LEADER")
 		self.STATUS = "leader"
 		self.LEADER_ID = self.my_id
 		self.VOTES = 0
