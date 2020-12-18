@@ -228,7 +228,7 @@ class RaftServer:
 
 	def respondToAppendEntriesRPC(self, msg):
 		self.LAST_UPDATED_TIME = time.time()
-		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToAppendEntriesRPC',
 					'term': self.CURRENT_TERM}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM or not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
