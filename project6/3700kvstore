@@ -58,6 +58,7 @@ class RaftServer:
 		self.sendDict(redirect)
 
 	def raftElectionProtocol(self):
+		print("ELECT CANDIDATE")
 		# convert to candidate
 		self.STATUS = "candidate"
 		# increment currentTerm
@@ -68,6 +69,7 @@ class RaftServer:
 
 	def sendRequestVoteRPCs(self):
 		for r in self.replica_ids:
+			print('Commit index:', self.COMMIT_INDEX)
 			request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
 					   'term': self.CURRENT_TERM, 'candidateId': self.my_id,
 					   'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
@@ -89,14 +91,13 @@ class RaftServer:
 					'term': self.CURRENT_TERM}
 		if msg['term'] < self.CURRENT_TERM:
 			response['voteGranted'] = False
-			self.sendDict(response)
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg['lastLogTerm'] >= self.lastLogTerm():
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
-			self.sendDict(response)
 		else:
 			response['voteGranted'] = False
-			self.sendDict(response)
+		
+		self.sendDict(response)
 
 	def handleRequestVoteRPCResult(self, msg):
 		if msg['voteGranted']:
@@ -142,6 +143,8 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
 		# TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
+		# self.sendDict(response)
+		
 
 	# matches terms
 	def matchesTerms(self, prevLogIdx, prevLogTerm):
@@ -172,7 +175,9 @@ class RaftServer:
 				self.LOG = self.LOG[:prevLogIdx]
 
 	def appendNewEntriesToLog(self, entries):
-		None
+		self.LOG.append(entries)
+		print("PRINTING LOG")
+		print(self.LOG)
 
 	def isLeader(self):
 		return self.my_id == self.LEADER_ID
@@ -191,16 +196,14 @@ class RaftServer:
 		self.successGetToClient(msg)
 
 	def handlePut(self, msg):
+		print("VALUES: ", msg['key'])
 		print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
-		# TODO
-		#self.broadcastTransaction(msg)
+		self.broadcastTransaction(msg)
 		self.updateStateMachine(msg)
 		#TODO: if transaction passes
 		self.successPutToClient(msg)
 
-	# def updateKV(self, msg):
-	# 	self.KEY_VALUE[msg['key']] = msg['value']
 
 	def updateLogLeader(self, msg):
 		self.LOG.append({'idx': len(self.LOG) + 1, 'command':msg, 'term': self.CURRENT_TERM})
@@ -211,8 +214,9 @@ class RaftServer:
 			self.STATE_MACHINE[msg['key']] = msg['value']
 			# todo: i hope indices line up :/
 			# self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
-		# elif msg['type'] == 'get':
-		# 	self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
+		elif msg['type'] == 'get':
+			print("ADD GET TO STATE MACHINE")
+			self.STATE_MACHINE.append(self.LOG[self.COMMIT_INDEX - 1])
 
 		self.LAST_APPLIED +=1
 
@@ -225,6 +229,12 @@ class RaftServer:
 		message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
 				   "term": self.CURRENT_TERM, "leaderId": self.LEADER_ID, 'prevLogIndex': self.lastLogIndex(),
 				   'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
+	#	for rid in self.replica_ids:
+	#		self.PREV_LOG_INDEX = self.NEXT_INDEX[rid] - 1
+	#		print("Prev log index: ", self.PREV_LOG_INDEX)
+	#		self.PREV_LOG_TERM = self.lastLogTerm()
+	#		self.LAST_UPDATED_TIME = time.time()		
+		print(message)
 		self.sendDict(message)
 
 	def respondToAppendEntriesRPC(self, msg):
@@ -237,14 +247,22 @@ class RaftServer:
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 		else:
+			print("ENTRIES:")
+			print(msg['entries'])
 			self.appendNewEntriesToLog(msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
+		# CAUSES JSON PROBLEM
+		# self.sendDict(response)
 
-		self.sendDict(response)
-
-
-
+	def handleAppendEntriesRPCResult(self, msg):
+        	if msg['success']:
+            	# update nextIndex and matchIndex for follower
+            		self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
+            		self.MATCH_INDEX[msg['src']] = self.lastLogIndex()
+        	else:
+            		self.NEXT_INDEX[msg['src']] -= 1
+            		self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
 
 
 	def successGetToClient(self, msg):
@@ -295,4 +313,11 @@ while True:
 			server.respondToRequestVoteRPCs(msg)
 		elif msg['type'] == 'respondToRequestVoteRPC':
 			server.handleRequestVoteRPCResult(msg)
-		# elif msg['type'] == 'respToHeartbeat':
+		elif msg['type'] == 'sendAppendEntriesRPC':
+			server.respondToAppendEntriesRPC(msg)
+		elif msg['type'] == 'respToAppendEntriesRPC':
+			server.handleAppendEntriesRPCResult(msg)
+
+
+
+
