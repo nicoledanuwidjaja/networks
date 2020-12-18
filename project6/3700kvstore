@@ -107,26 +107,35 @@ class RaftServer:
 			prevTerm = self.LOG[prevLogIndex - 1]['term']
 			return prevTerm
 
+	def updateTerm(self, term):
+		if self.CURRENT_TERM < term:
+			self.CURRENT_TERM = term
+			self.STATUS = "follower"
 
 	def respondToRequestVoteRPCs(self, msg):
 		# TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
-		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC',
-					'term': self.CURRENT_TERM}
+		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respondToRequestVoteRPC'}
 		if msg['term'] < self.CURRENT_TERM:
 			response['voteGranted'] = False
+			response['term'] = self.CURRENT_TERM
 		elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg[
 			'lastLogTerm'] >= self.lastLogTerm():
 			response['voteGranted'] = True
 			self.VOTED_FOR = msg['src']
 			self.LAST_UPDATED_TIME = time.time()
+			self.updateTerm(msg['term'])
+			response['term'] = self.CURRENT_TERM
 		else:
 			response['voteGranted'] = False
+			self.updateTerm(msg['term'])
+			response['term'] = self.CURRENT_TERM
 
 		self.sendDict(response)
 
 
 	def handleRequestVoteRPCResult(self, msg):
-		if msg['voteGranted']:
+		self.updateTerm(msg['term'])
+		if msg['voteGranted'] and self.STATUS == "candidate":
 			self.VOTES += 1
 
 		if self.VOTES >= self.QUORUM:
@@ -169,12 +178,12 @@ class RaftServer:
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-			self.CURRENT_TERM = msg['term']
+			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
-			self.CURRENT_TERM = msg['term']
+			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
@@ -293,12 +302,12 @@ class RaftServer:
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-			self.CURRENT_TERM = msg['term']
+			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
-			self.CURRENT_TERM = msg['term']
+			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = True
@@ -312,8 +321,11 @@ class RaftServer:
 			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
 			self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']] - 1
 		else:
-			self.NEXT_INDEX[msg['src']] -= 1
-			self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']] - 1:], msg['src'])
+			self.updateTerm(msg['term'])
+			# if i am still leader (aka their false response wasn't because my term was behind)
+			if self.STATUS == "leader":
+				self.NEXT_INDEX[msg['src']] -= 1
+				self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']] - 1:], msg['src'])
 
 
 	def successGetToClient(self, msg):
@@ -336,11 +348,6 @@ class RaftServer:
 		while self.COMMIT_INDEX > self.LAST_APPLIED:
 			self.LAST_APPLIED += 1
 			self.updateStateMachine(self.LOG[self.LAST_APPLIED - 1]['command'])
-
-	def checkTerm(self, msg):
-		if msg['term'] > self.CURRENT_TERM:
-			self.CURRENT_TERM = msg['term']
-			self.STATUS = 'follower'
 
 server = RaftServer(sys.argv[1], sys.argv[2:])
 
