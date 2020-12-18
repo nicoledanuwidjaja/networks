@@ -328,10 +328,13 @@ class RaftServer:
 
 
 	def handleAppendEntriesRPCResult(self, msg):
+		print("JANDLE APPEN ENTRIES RPC RESULT FOR: "+ msg['src'])
 		if msg['success']:
 			# update nextIndex and matchIndex for follower
 			self.NEXT_INDEX[msg['src']] = self.lastLogIndex() + 1
+			print(self.NEXT_INDEX[msg['src']])
 			self.MATCH_INDEX[msg['src']] = self.NEXT_INDEX[msg['src']] - 1
+			print(self.MATCH_INDEX[msg['src']])
 		else:
 			self.updateTerm(msg['term'])
 			# if i am still leader (aka their false response wasn't because my term was behind)
