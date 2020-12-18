@@ -128,6 +128,7 @@ class RaftServer:
 		# still accept src as new leader
 		self.LEADER_ID = msg['src']
 		self.STATUS = 'follower'
+		print("NEW LEADER IS: ", msg['src'])
 		# HEARD FROM LEADER!!
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToHeartbeat',
 					'term': self.CURRENT_TERM}
