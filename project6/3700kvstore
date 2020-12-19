@@ -300,10 +300,11 @@ class RaftServer:
 
 		if value:
 			response['value'] = value
+			self.sendDict(response)
 		else:
-			print("Value is null")
-			response['value'] = ""
-		self.sendDict(response)
+			self.sendFailMsg(msg)
+		# self.sendDict(response)
+
 
 
 	def successPutToClient(self, msg):
