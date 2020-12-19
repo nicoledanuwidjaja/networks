@@ -340,7 +340,8 @@ while True:
 		msg_raw = server.sock.recv(32768)
 
 		if len(msg_raw) == 0: continue
-		msg = json.loads(msg_raw)
+		decoded_msg = msg_raw.decode('utf-8')
+		msg = json.loads(decoded_msg)
 
 		if server.isLeader() and msg['type'] in ['get', 'put']:
 			if msg['type'] == 'get':
