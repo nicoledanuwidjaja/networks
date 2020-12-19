@@ -58,7 +58,6 @@ class RaftServer:
         self.sendDict(redirect)
 
     def raftElectionProtocol(self):
-        # print("ELECT CANDIDATE")
         # convert to candidate
         self.STATUS = "candidate"
         # increment currentTerm
@@ -69,22 +68,40 @@ class RaftServer:
 
     def sendRequestVoteRPCs(self):
         for r in self.replica_ids:
-            # print("Replica #: ", r)
-            # print('Commit index:', self.COMMIT_INDEX)
             request = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'sendRequestVoteRPC',
                        'term': self.CURRENT_TERM, 'candidateId': self.my_id,
                        'lastLogIndex': self.lastLogIndex(), 'lastLogTerm': self.lastLogTerm()}
-            self.sendDict(request)
+        self.sendDict(request)
 
     def lastLogIndex(self):
         return len(self.LOG)
 
     def lastLogTerm(self):
+        print("Log length: ", len(self.LOG))
         length = len(self.LOG)
         if length == 0:
-            return self.CURRENT_TERM
+            print('CURRENT TERM: ', self.CURRENT_TERM)
+            return 0
         else:
+            print('Last log term: ', self.LOG[length - 1]['term'])
             return self.LOG[length - 1]['term']
+
+    def prevLogIndex(self, r):
+        return self.NEXT_INDEX[r] - 1
+
+    def prevLogTerm(self, r):
+        print('prev log index: ', self.prevLogIndex(r))
+        prevLogIndex = self.prevLogIndex(r)
+        if len(self.LOG) == 0:
+            return 0
+        else:
+            print('prev log term: ', self.LOG[prevLogIndex - 1]['term'])
+            return self.LOG[prevLogIndex - 1]['term']
+
+    def updateTerm(self, term):
+        if self.CURRENT_TERM < term:
+            self.CURRENT_TERM = term
+            self.STATUS = "follower"
 
     def respondToRequestVoteRPCs(self, msg):
         # TODO: USE TERM IN HERE TO UPDATE LEADER'S TRACKER OF ALL REPLICAS??
@@ -92,6 +109,7 @@ class RaftServer:
                     'term': self.CURRENT_TERM}
         if msg['term'] < self.CURRENT_TERM:
             response['voteGranted'] = False
+            response['term'] = self.CURRENT_TERM
         elif not self.VOTED_FOR or self.VOTED_FOR == msg['src'] and msg['lastLogIndex'] >= self.lastLogIndex() and msg[
             'lastLogTerm'] >= self.lastLogTerm():
             response['voteGranted'] = True
@@ -111,6 +129,7 @@ class RaftServer:
             self.becomeLeader()
             self.sendHeartbeat()
 
+
     def becomeLeader(self):
         self.STATUS = "leader"
         self.LEADER_ID = self.my_id
@@ -118,6 +137,7 @@ class RaftServer:
         for r in self.replica_ids:
             self.MATCH_INDEX[r] = 0
             self.NEXT_INDEX[r] = self.lastLogIndex() + 1
+
 
     def sendHeartbeat(self):
         self.LAST_UPDATED_TIME = time.time()
@@ -128,6 +148,7 @@ class RaftServer:
                       'prevLogIndex': self.lastLogIndex(), 'prevLogTerm': self.lastLogTerm(),
                       'entries': [], 'leaderCommit': self.COMMIT_INDEX}
             self.sendDict(append)
+
 
     def recvHeartbeat(self, msg):
         # once you receive heartbeat, regardless of if youre responding true or false,
@@ -149,7 +170,9 @@ class RaftServer:
         # TODO: SHOULD I BE RESPONDING TO HEARTBEAT HERE
         # self.sendDict(response)
 
-    # matches terms
+        # matches terms
+
+
     def matchesTerms(self, prevLogIdx, prevLogTerm):
         if prevLogIdx == 0:
             return True
@@ -160,15 +183,18 @@ class RaftServer:
         else:
             return False
 
-    # TODO: confused about the purpose of this
-    # ohh i get it. its if leader has more updated commits but didnt send all entires
-    # necessary for me to have that many commmits. so i need to make my commit Idx be whattever
-    # leader sent me and not exactly what leader has
+        # TODO: confused about the purpose of this
+        # ohh i get it. its if leader has more updated commits but didnt send all entires
+        # necessary for me to have that many commmits. so i need to make my commit Idx be whattever
+        # leader sent me and not exactly what leader has
+
+
     def updateCommitIdx(self, leaderCommit):
         if leaderCommit > self.COMMIT_INDEX:
             self.COMMIT_INDEX = min(leaderCommit, self.lastLogIndex())
 
         # AND DELETES LOG ENTRIES TO KEEP CONSISTENT WITH LEADER
+
 
     def handleConflictingEntries(self, prevLogIdx, prevLogTerm):
         # make sure my log is same length in the first place
@@ -179,13 +205,16 @@ class RaftServer:
                 self.COMMIT_INDEX = msg['prevLogIndex'] + 1
                 self.LOG = self.LOG[:prevLogIdx]
 
+
     def appendNewEntriesToLog(self, entries):
         self.LOG.append(entries)
         # print("PRINTING LOG")
         # print(self.LOG)
 
+
     def isLeader(self):
         return self.my_id == self.LEADER_ID
+
 
     def handleGet(self, msg):
         # print("GET MSG: ", msg['key'])
@@ -200,6 +229,7 @@ class RaftServer:
         # self.updateStateMachine(msg)
         self.successGetToClient(msg)
 
+
     def handlePut(self, msg):
         # print("VALUES: ", msg['key'])
         # print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
@@ -209,9 +239,11 @@ class RaftServer:
         # TODO: if transaction passes
         self.successPutToClient(msg)
 
+
     def updateLogLeader(self, msg):
         self.LOG.append({'idx': len(self.LOG) + 1, 'command': msg, 'term': self.CURRENT_TERM})
         self.COMMIT_INDEX += 1
+
 
     def updateStateMachine(self, msg):
         if msg['type'] == 'put':
@@ -224,10 +256,12 @@ class RaftServer:
 
         self.LAST_APPLIED += 1
 
+
     def broadcastTransaction(self):
         for r in self.replica_ids:
             if self.NEXT_INDEX[r] <= self.lastLogIndex():
                 self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[r]:], r)
+
 
     def sendAppendEntriesRPC(self, entries, replica):
         message = {"src": self.my_id, "dst": replica, "leader": self.LEADER_ID, "type": "sendAppendEntriesRPC",
@@ -235,6 +269,7 @@ class RaftServer:
                    'prevLogTerm': self.lastLogTerm(), 'entries': entries, 'leaderCommit': self.COMMIT_INDEX}
         # print(message)
         self.sendDict(message)
+
 
     def respondToAppendEntriesRPC(self, msg):
         self.LAST_UPDATED_TIME = time.time()
@@ -253,6 +288,7 @@ class RaftServer:
         self.updateCommitIdx(msg['leaderCommit'])
         self.sendDict(response)
 
+
     def handleAppendEntriesRPCResult(self, msg):
         if msg['success']:
             # update nextIndex and matchIndex for follower
@@ -262,6 +298,7 @@ class RaftServer:
             self.NEXT_INDEX[msg['src']] -= 1
             self.sendAppendEntriesRPC(self.LOG[self.NEXT_INDEX[msg['src']]:], msg['src'])
 
+
     def successGetToClient(self, msg):
         value = self.STATE_MACHINE.get(msg['key'])
         response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok", "MID": msg['MID']}
@@ -269,8 +306,10 @@ class RaftServer:
         if value:
             response['value'] = value
         else:
+            print("Value is null")
             response['value'] = ""
         self.sendDict(response)
+
 
     def successPutToClient(self, msg):
         response = {"src": msg['dst'], "dst": msg['src'], "leader": self.LEADER_ID, "type": "ok",
