@@ -345,12 +345,17 @@ while True:
 		elif msg['type'] in ['get', 'put']:
 			server.sendRedirectMsg(msg)
 		elif msg['type'] == 'Heartbeat':
+			server.LAST_UPDATED_TIME = time.time()
 			server.recvHeartbeat(msg)
 		elif msg['type'] == 'sendRequestVoteRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.respondToRequestVoteRPCs(msg)
 		elif msg['type'] == 'respondToRequestVoteRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.handleRequestVoteRPCResult(msg)
 		elif msg['type'] == 'sendAppendEntriesRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.respondToAppendEntriesRPC(msg)
 		elif msg['type'] == 'respToAppendEntriesRPC':
+			server.LAST_UPDATED_TIME = time.time()
 			server.handleAppendEntriesRPCResult(msg)
