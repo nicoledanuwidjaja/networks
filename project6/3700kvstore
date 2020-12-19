@@ -98,11 +98,11 @@ class RaftServer:
 	def prevLogTerm(self, r):
 		prevLogIndex = self.NEXT_INDEX[r] - 1
 		length = len(self.LOG)
-		print("SELF.LOG: ", self.LOG)
+		# print("SELF.LOG: ", self.LOG)
 		if length == 0:
 			return 0
 		else:
-			print("PREVLOGIDX: " ,prevLogIndex)
+			# print("PREVLOGIDX: " ,prevLogIndex)
 			prevTerm = self.LOG[prevLogIndex - 1]['term']
 			return prevTerm
 
@@ -131,14 +131,13 @@ class RaftServer:
 
 		self.sendDict(response)
 
-
 	def handleRequestVoteRPCResult(self, msg):
 		self.updateTerm(msg['term'])
 		if msg['voteGranted'] and self.STATUS == "candidate":
 			self.VOTES += 1
 
 		if self.VOTES >= self.QUORUM:
-			print("WON THE ELECTION!!: ", self.my_id)
+			# print("WON THE ELECTION!!: ", self.my_id)
 			self.becomeLeader()
 			self.sendHeartbeat()
 
@@ -154,7 +153,7 @@ class RaftServer:
 
 	def sendHeartbeat(self):
 		self.LAST_UPDATED_TIME = time.time()
-		print("SENDING HEARTBEAT FROM: ", self.my_id)
+		# print("SENDING HEARTBEAT FROM: ", self.my_id)
 		for r in self.replica_ids:
 			# set last log idx and term to be my last log and term bc i dont have any updates so we should all be same
 			append = {'src': self.my_id, 'dst': r, 'leader': self.LEADER_ID, 'type': 'Heartbeat',
@@ -165,7 +164,7 @@ class RaftServer:
 
 
 	def recvHeartbeat(self, msg):
-		print("RECEIVED HEARTBEAT FROM: ", msg['src'])
+		# print("RECEIVED HEARTBEAT FROM: ", msg['src'])
 		# once you receive heartbeat, regardless of if youre responding true or false,
 		# still accept src as new leader
 		self.LEADER_ID = msg['src']
@@ -175,19 +174,19 @@ class RaftServer:
 		response = {'src': msg['dst'], 'dst': msg['src'], 'leader': self.LEADER_ID, 'type': 'respToAppendEntriesRPC'}
 		# TODO: should i be updating term here?
 		if msg['term'] < self.CURRENT_TERM:
-			print("HEARTBEAT MSG[TERM] < CURRENT TERM")
-			print("MSG[TERM]: ", msg['term'], " CURRENT_TERM: ", self.CURRENT_TERM)
+			# print("HEARTBEAT MSG[TERM] < CURRENT TERM")
+			# print("MSG[TERM]: ", msg['term'], " CURRENT_TERM: ", self.CURRENT_TERM)
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		elif not self.matchesTerms(msg['prevLogIndex'], msg['prevLogTerm']):
-			print("HEARTBEAT DOESN'T MATCH TERMS")
+			# print("HEARTBEAT DOESN'T MATCH TERMS")
 			self.updateTerm(msg['term'])
 			self.updateCommitIdx(msg['leaderCommit'])
 			response['success'] = False
 			response['term'] = self.CURRENT_TERM
 		else:
-			print("HEARTBEAT SUCCESSFUL HEARTBEAT")
+			# print("HEARTBEAT SUCCESSFUL HEARTBEAT")
 			self.updateTerm(msg['term'])
 			self.handleConflictingEntries(msg['prevLogIndex'], msg['prevLogTerm'], msg['entries'])
 			self.updateCommitIdx(msg['leaderCommit'])
