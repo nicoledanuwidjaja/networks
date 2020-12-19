@@ -231,9 +231,9 @@ class RaftServer:
 		# print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		self.broadcastTransaction()
-		while True:
-			if self.SUCCESS_COUNT >= self.QUORUM:
-				break
+		# while True:
+		# 	if self.SUCCESS_COUNT >= self.QUORUM:
+		# 		break
 		self.updateStateMachine(msg)
 		# TODO: if transaction passes
 		self.successPutToClient(msg)
