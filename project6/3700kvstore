@@ -77,25 +77,20 @@ class RaftServer:
         return len(self.LOG)
 
     def lastLogTerm(self):
-        print("Log length: ", len(self.LOG))
         length = len(self.LOG)
         if length == 0:
-            print('CURRENT TERM: ', self.CURRENT_TERM)
             return 0
         else:
-            print('Last log term: ', self.LOG[length - 1]['term'])
             return self.LOG[length - 1]['term']
 
     def prevLogIndex(self, r):
         return self.NEXT_INDEX[r] - 1
 
     def prevLogTerm(self, r):
-        print('prev log index: ', self.prevLogIndex(r))
         prevLogIndex = self.prevLogIndex(r)
         if len(self.LOG) == 0:
             return 0
         else:
-            print('prev log term: ', self.LOG[prevLogIndex - 1]['term'])
             return self.LOG[prevLogIndex - 1]['term']
 
     def updateTerm(self, term):
