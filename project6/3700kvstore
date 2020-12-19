@@ -35,6 +35,7 @@ class RaftServer:
 		self.QUORUM = math.ceil(len(self.replica_ids) / 2)
 		self.ELECTION_TIMEOUT = random.randrange(150, 300)  # 150-300 ms range per timeout
 		self.LAST_UPDATED_TIME = time.time()
+		self.SUCCESS_COUNT = 0
 
 	# turn time into miliseconds
 	def getTime(self, curr_time):
@@ -230,6 +231,9 @@ class RaftServer:
 		# print("PUT MSG: ", "[", msg['key'], " : ", msg['value'], "]")
 		self.updateLogLeader(msg)
 		self.broadcastTransaction()
+		while True:
+			if self.SUCCESS_COUNT >= self.QUORUM:
+				break
 		self.updateStateMachine(msg)
 		# TODO: if transaction passes
 		self.successPutToClient(msg)
